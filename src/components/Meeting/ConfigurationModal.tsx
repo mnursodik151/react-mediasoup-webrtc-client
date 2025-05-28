@@ -6,6 +6,8 @@ interface ConfigurationModalProps {
   userId: string;
   setUserId: (value: string) => void;
   onSubmit: (e: React.FormEvent) => void;
+  onDisconnect?: () => void;  // Add this prop
+  hasActiveConnection?: boolean;  // Add this prop
 }
 
 const ConfigurationModal: React.FC<ConfigurationModalProps> = ({
@@ -13,7 +15,9 @@ const ConfigurationModal: React.FC<ConfigurationModalProps> = ({
   setWsIP,
   userId,
   setUserId,
-  onSubmit
+  onSubmit,
+  onDisconnect,
+  hasActiveConnection = false
 }) => (
   <div className="config-modal-overlay">
     <div className="config-modal">
@@ -40,7 +44,22 @@ const ConfigurationModal: React.FC<ConfigurationModalProps> = ({
           />
         </div>
         <div className="form-actions">
-          <button type="submit">Connect</button>
+          {hasActiveConnection && onDisconnect && (
+            <button 
+              type="button" 
+              onClick={onDisconnect}
+              className="disconnect-button"
+              style={{ 
+                backgroundColor: '#d32f2f',
+                marginRight: '10px'
+              }}
+            >
+              Disconnect
+            </button>
+          )}
+          <button type="submit">
+            {hasActiveConnection ? 'Reconnect' : 'Connect'}
+          </button>
         </div>
       </form>
     </div>

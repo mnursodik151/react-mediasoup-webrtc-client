@@ -30,7 +30,8 @@ export default function MediaRoom() {
     showInvitationModal,
     setShowInvitationModal,
     setIncomingInvitation,
-    sendInvites
+    sendInvites,
+    disconnectSocket  // Get the disconnect function
   } = useSocket();
 
   const {
@@ -95,6 +96,11 @@ export default function MediaRoom() {
   const handleDisconnect = () => {
     leaveRoom();
     cleanupMedia();
+  };
+
+  // Handle manual socket disconnection from config modal
+  const handleManualDisconnect = () => {
+    disconnectSocket();
   };
 
   // Handle invite submission
@@ -315,6 +321,8 @@ export default function MediaRoom() {
           userId={userId}
           setUserId={setUserId}
           onSubmit={handleConfigSubmit}
+          onDisconnect={handleManualDisconnect}
+          hasActiveConnection={!!socket}
         />
       ) : !socket ? (
         <div className="loading-screen">

@@ -13,13 +13,13 @@ export const useSocket = () => {
   } | null>(null);
   const [showInvitationModal, setShowInvitationModal] = useState<boolean>(false);
 
-  // Add a ref to track if initialization is in progress to prevent double init
+  // Add or ensure there's an initializingRef
   const initializingRef = useRef<boolean>(false);
 
   const initializeSocket = useCallback(() => {
     // Prevent duplicate initialization
     if (initializingRef.current) {
-      console.log('Socket initialization already in progress, skipping');
+      console.log('Socket initialization already in progress, skipping. If you want to force reconnection, disconnect first.');
       return null;
     }
     
@@ -92,6 +92,23 @@ export const useSocket = () => {
     }
   }, [wsIP, userId, socket]); // Add socket to dependencies
 
+  // Update disconnectSocket function to reset the initializingRef flag
+  const disconnectSocket = useCallback(() => {
+    if (socket) {
+      console.log('Manually disconnecting socket connection');
+      socket.disconnect();
+      setSocket(null);
+      
+      // Reset the initialization flag
+      initializingRef.current = false;
+      console.log('Reset socket initialization flag');
+      
+      setShowConfigModal(true);
+      return true;
+    }
+    return false;
+  }, [socket]);
+
   const handleConfigSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     
@@ -104,6 +121,10 @@ export const useSocket = () => {
       alert('Please enter a valid User ID');
       return;
     }
+    
+    // Reset the initialization flag to allow new connection attempt
+    initializingRef.current = false;
+    console.log('Reset initialization flag before socket reconnection attempt');
     
     console.log('Configuration submitted, initializing socket...');
     initializeSocket();
@@ -149,6 +170,7 @@ export const useSocket = () => {
     showInvitationModal,
     setShowInvitationModal,
     setIncomingInvitation,
-    sendInvites,  // Add this to the return value
+    sendInvites,
+    disconnectSocket,  // Add this to the return value
   };
 };
