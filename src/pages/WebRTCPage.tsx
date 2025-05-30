@@ -114,24 +114,24 @@ export default function MediaRoom() {
   // Handle invite submission
   const handleInviteSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!inviteUserIds.trim()) {
       setInvitationStatus('Error: Please enter at least one user ID');
       return;
     }
-    
+
     const userIds = inviteUserIds.split(',').map(id => id.trim()).filter(Boolean);
-    
+
     if (userIds.length === 0) {
       setInvitationStatus('Error: No valid user IDs provided');
       return;
     }
-    
+
     console.log(`Sending invitations to: ${userIds.join(', ')}`);
     sendInvites(roomId, peerId, userIds);
-    
+
     setInvitationStatus(`Invitations sent to ${userIds.length} user(s)`);
-    
+
     // Clear the input after a successful send
     setTimeout(() => {
       setInviteUserIds('');
@@ -143,25 +143,25 @@ export default function MediaRoom() {
   // Simplified invitation acceptance handler that mimics the button join flow
   const handleAcceptInvitation = async () => {
     if (!incomingInvitation || acceptingInvitation) return;
-    
+
     console.log('Starting invitation acceptance process for room:', incomingInvitation.roomId);
     setAcceptingInvitation(true);
     setInvitationError(null);
-    
+
     try {
       // Update room ID from the invitation
       const invitedRoomId = incomingInvitation.roomId;
       console.log('Setting room ID to:', invitedRoomId);
       setRoomId(invitedRoomId);
-      
+
       // Close the invitation modal
       setShowInvitationModal(false);
       setIncomingInvitation(null);
-      
+
       // Simply call the same join function as the button
       console.log('Using standard join flow with invited room ID');
       await handleJoinRoom();
-      
+
     } catch (error) {
       console.error('Error joining invited room:', error);
       setInvitationError('Failed to join meeting. Please try again.');
@@ -187,7 +187,7 @@ export default function MediaRoom() {
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
-    
+
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       leaveRoom();
@@ -207,17 +207,17 @@ export default function MediaRoom() {
   const activeStream =
     activeVideoId
       ? remotePeers.find((p) => p.peerId === activeVideoId)?.stream ||
-        (localStreamRef.current && activeVideoId === 'local' ? localStreamRef.current : null)
+      (localStreamRef.current && activeVideoId === 'local' ? localStreamRef.current : null)
       : null;
 
   // Create a wrapper component that will always be rendered
   const renderInvitationModal = () => {
     if (showInvitationModal && incomingInvitation) {
-      console.log('Rendering invitation modal with states:', { 
-        acceptingInvitation, 
-        error: invitationError 
+      console.log('Rendering invitation modal with states:', {
+        acceptingInvitation,
+        error: invitationError
       });
-      
+
       return (
         <InvitationModal
           invitation={incomingInvitation}
@@ -254,7 +254,7 @@ export default function MediaRoom() {
         console.log(`Ensuring active video is attached for ${activeVideoId}`);
       }
     };
-    
+
     reattachVideos();
   }, [activeVideoId, activeStream, remotePeers]);
 
@@ -298,7 +298,7 @@ export default function MediaRoom() {
       {/* Add connection debugger */}
       <ConnectionDebugger
         socketConnected={!!socket && socket.connected}
-        mediasoupLoaded={!!useWebRTC} 
+        mediasoupLoaded={!!useWebRTC}
         remotePeers={remotePeers}
         roomId={roomId}
         peerId={peerId}
@@ -362,8 +362,30 @@ export default function MediaRoom() {
       */}
       {/* Add StatsMonitor component */}
       <StatsMonitor stats={connectionStats} />
+
+      {/* Debug button for connection stats */}
+      <button
+        className="debug-button"
+        onClick={debugStats}
+        style={{ position: 'absolute', bottom: '10px', left: '10px', zIndex: 100 }}
+      >
+        Debug Stats
+      </button>
     </div>
   );
+
+  const debugStats = () => {
+    console.log("Current connection stats:", connectionStats);
+
+    // Count connections
+    const connectionCount = Object.keys(connectionStats).length;
+
+    if (connectionCount === 0) {
+      alert("No WebRTC stats available. Make sure connections are established.");
+    } else {
+      alert(`WebRTC stats available for ${connectionCount} connections. Check console for details.`);
+    }
+  };
 
   // Modify the return statement to use the renderMeetingRoom function
   return (
@@ -410,3 +432,4 @@ export default function MediaRoom() {
     </>
   );
 }
+

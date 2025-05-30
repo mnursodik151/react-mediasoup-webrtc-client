@@ -70,15 +70,18 @@ export const useWebRTC = (socket: Socket | null) => {
         // Access the internal PeerConnection used by mediasoup-client
         const handler = transport.handler as any;
         if (handler && handler.pc) {
-          monitorPeerConnection(handler.pc, 'Send Transport');
-          // Add this line:
-          const monitorInterval = monitorDataFlow(handler.pc, 'Send Transport');
+          // This will initialize and start monitoring
+          const monitorInterval = monitorPeerConnection(handler.pc, 'Send Transport');
           
           // Clean up the monitoring when the transport closes
-          const existingConnectionHandler = transport.on('connectionstatechange', async (state) => {
-            console.log('Send transport connection state:', state);
+          transport.on('connectionstatechange', (state) => {
             if (state === 'closed') {
               clearInterval(monitorInterval);
+              // Remove stats when transport closes
+              if (connectionStatsRef.current['Send Transport']) {
+                delete connectionStatsRef.current['Send Transport'];
+                setConnectionStats({...connectionStatsRef.current});
+              }
             }
           });
         }
@@ -254,7 +257,20 @@ export const useWebRTC = (socket: Socket | null) => {
       // Access the internal PeerConnection used by mediasoup-client
       const handler = transport.handler as any;
       if (handler && handler.pc) {
-        monitorPeerConnection(handler.pc, `Receive Transport (${data.peerId})`);
+        // This will initialize and start monitoring
+        const monitorInterval = monitorPeerConnection(handler.pc, `Receive Transport (${data.peerId})`);
+        
+        // Clean up the monitoring when the transport closes
+        transport.on('connectionstatechange', (state) => {
+          if (state === 'closed') {
+            clearInterval(monitorInterval);
+            // Remove stats when transport closes
+            if (connectionStatsRef.current[`Receive Transport (${data.peerId})`]) {
+              delete connectionStatsRef.current[`Receive Transport (${data.peerId})`];
+              setConnectionStats({...connectionStatsRef.current});
+            }
+          }
+        });
       }
       
       transport.on('connect', async ({ dtlsParameters }, callback) => {
@@ -509,13 +525,43 @@ export const useWebRTC = (socket: Socket | null) => {
   const monitorPeerConnection = (pc: RTCPeerConnection, description: string) => {
     console.log(`[ICE] Monitoring connection: ${description}`);
 
+    // Initialize stats for this connection if they don't exist
+    if (!connectionStatsRef.current[description]) {
+      connectionStatsRef.current[description] = {
+        connectionState: pc.iceConnectionState,
+        candidates: { host: 0, srflx: 0, relay: 0 },
+        dataFlow: {
+          sendBitrate: 0,
+          receiveBitrate: 0,
+          totalBytesSent: 0,
+          totalBytesReceived: 0,
+          timestamp: Date.now()
+        },
+        tracks: {
+          sending: [],
+          receiving: []
+        }
+      };
+      // Initial update to trigger UI render
+      setConnectionStats({...connectionStatsRef.current});
+    }
+
     // Log all ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         const candidateType = event.candidate.type || 'unknown';
-        candidateCounter[candidateType] = (candidateCounter[candidateType] || 0) + 1;
         
-        console.log(`[ICE] ${description} candidate ${candidateCounter[candidateType]} (${candidateType}): 
+        // Update candidate counter
+        if (!connectionStatsRef.current[description].candidates[candidateType]) {
+          connectionStatsRef.current[description].candidates[candidateType] = 0;
+        }
+        connectionStatsRef.current[description].candidates[candidateType]++;
+        
+        // Update UI
+        setConnectionStats({...connectionStatsRef.current});
+        
+        // Log for debugging
+        console.log(`[ICE] ${description} candidate (${candidateType}): 
           protocol: ${event.candidate.protocol}
           address: ${event.candidate.address}
           port: ${event.candidate.port}
@@ -529,11 +575,16 @@ export const useWebRTC = (socket: Socket | null) => {
     pc.oniceconnectionstatechange = () => {
       console.log(`[ICE] ${description} connection state changed: ${pc.iceConnectionState} at ${new Date().toISOString()}`);
       
+      // Update connection state in stats
+      if (connectionStatsRef.current[description]) {
+        connectionStatsRef.current[description].connectionState = pc.iceConnectionState;
+        setConnectionStats({...connectionStatsRef.current});
+      }
+      
       if (pc.iceConnectionState === 'checking') {
-        console.log(`[ICE] Checking ICE candidates (host: ${candidateCounter.host || 0}, srflx: ${candidateCounter.srflx || 0}, relay: ${candidateCounter.relay || 0})`);
+        console.log(`[ICE] Checking ICE candidates for ${description}`);
       } else if (pc.iceConnectionState === 'failed') {
-        // Log ICE failure details and add advanced diagnostics
-        console.error(`[ICE] Connection failed with ${candidateCounter.relay || 0} relay candidates!`);
+        console.error(`[ICE] Connection failed for ${description}`);
         
         // Force ICE restart on failure (if supported)
         try {
@@ -542,13 +593,11 @@ export const useWebRTC = (socket: Socket | null) => {
         } catch (e) {
           console.warn('[ICE] ICE restart not supported or failed', e);
         }
-        
-        // Log all available stats on failure
-        pc.getStats().then(stats => {
-          console.log('[ICE] Connection stats at failure:', Array.from(stats.values()));
-        });
       }
     };
+    
+    // Start monitoring data flow
+    return monitorDataFlow(pc, description);
   };
 
   // Helper to get the selected candidate pair (works in Chrome)
@@ -699,57 +748,10 @@ export const useWebRTC = (socket: Socket | null) => {
     let lastBytesReceived = 0;
     let lastTimestamp = Date.now();
     
-    // Initialize stats for this connection
-    if (!connectionStatsRef.current[description]) {
-      connectionStatsRef.current[description] = {
-        connectionState: pc.iceConnectionState,
-        candidates: { host: 0, srflx: 0, relay: 0 },
-        dataFlow: {
-          sendBitrate: 0,
-          receiveBitrate: 0,
-          totalBytesSent: 0,
-          totalBytesReceived: 0,
-          timestamp: Date.now()
-        },
-        tracks: {
-          sending: [] as any[],
-          receiving: [] as any[]
-        }
-      };
-    }
-    
-    // Update connection state
-    pc.oniceconnectionstatechange = () => {
-      console.log(`[ICE] ${description} connection state changed: ${pc.iceConnectionState}`);
-      
+    // Update track info initially and when tracks change
+    const updateTrackInfo = () => {
       if (!connectionStatsRef.current[description]) return;
       
-      connectionStatsRef.current[description].connectionState = pc.iceConnectionState;
-      setConnectionStats({...connectionStatsRef.current});
-      
-      // Rest of your existing code...
-    };
-    
-    // Update candidates
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        const candidateType = event.candidate.type || 'unknown';
-        
-        if (!connectionStatsRef.current[description]) return;
-        
-        if (!connectionStatsRef.current[description].candidates[candidateType]) {
-          connectionStatsRef.current[description].candidates[candidateType] = 0;
-        }
-        
-        connectionStatsRef.current[description].candidates[candidateType]++;
-        setConnectionStats({...connectionStatsRef.current});
-        
-        // Rest of your existing code...
-      }
-    };
-    
-    // Update track info initially
-    const updateTrackInfo = () => {
       const senders = pc.getSenders().map(sender => ({
         kind: sender.track?.kind || 'unknown',
         enabled: sender.track?.enabled || false,
@@ -770,23 +772,27 @@ export const useWebRTC = (socket: Socket | null) => {
       setConnectionStats({...connectionStatsRef.current});
     };
     
-    // Call initially and on track events
+    // Call initially and add track event listener
     updateTrackInfo();
-    pc.ontrack = () => updateTrackInfo();
+    pc.addEventListener('track', updateTrackInfo);
     
+    // Start interval for monitoring data flow
     const interval = setInterval(async () => {
+      if (!pc || pc.connectionState === 'closed') {
+        clearInterval(interval);
+        return;
+      }
+      
       try {
         const stats = await pc.getStats();
         let totalBytesSent = 0;
         let totalBytesReceived = 0;
         
         stats.forEach(report => {
-          // Check for outbound-rtp (sending data)
           if (report.type === 'outbound-rtp' && report.bytesSent) {
             totalBytesSent += report.bytesSent;
           }
           
-          // Check for inbound-rtp (receiving data)
           if (report.type === 'inbound-rtp' && report.bytesReceived) {
             totalBytesReceived += report.bytesReceived;
           }
@@ -803,7 +809,7 @@ export const useWebRTC = (socket: Socket | null) => {
         lastBytesReceived = totalBytesReceived;
         lastTimestamp = now;
         
-        // Update stats ref
+        // Update stats in the ref
         if (connectionStatsRef.current[description]) {
           connectionStatsRef.current[description].dataFlow = {
             sendBitrate,
@@ -813,20 +819,18 @@ export const useWebRTC = (socket: Socket | null) => {
             timestamp: now
           };
           
-          // Update state to trigger re-render
-          setConnectionStats({...connectionStatsRef.current});
+          // Only update state if there's actual data flowing to minimize renders
+          if (sendBitrate > 0 || receiveBitrate > 0 || 
+              connectionStatsRef.current[description].dataFlow.totalBytesSent !== totalBytesSent ||
+              connectionStatsRef.current[description].dataFlow.totalBytesReceived !== totalBytesReceived) {
+            setConnectionStats({...connectionStatsRef.current});
+          }
         }
         
-        if (sendBitrate > 0 || receiveBitrate > 0) {
-          console.log(`[DATA] ${description} - Sending: ${sendBitrate.toFixed(2)} kbps, Receiving: ${receiveBitrate.toFixed(2)} kbps`);
-          console.log(`[DATA] ${description} - Total sent: ${(totalBytesSent/1024).toFixed(2)} KB, Total received: ${(totalBytesReceived/1024).toFixed(2)} KB`);
-        } else {
-          console.warn(`[DATA] ${description} - No data flowing!`);
-        }
       } catch (e) {
         console.error('[DATA] Error monitoring data flow:', e);
       }
-    }, 3000); // Check every 3 seconds
+    }, 2000); // Check every 2 seconds
     
     return interval;
   };
