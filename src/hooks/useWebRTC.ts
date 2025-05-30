@@ -34,6 +34,13 @@ export const useWebRTC = (socket: Socket | null) => {
     socket.once('transportCreated', async (options: any) => {
       console.log('Send transport options received:', options);
 
+      // Check if turnServers are properly configured
+      if (!options.turnServers || !options.turnServers.length) {
+        console.error('[ICE] No TURN servers provided by the server!');
+      } else {
+        logIceServers(options.turnServers);
+      }
+
       // Only create transport if it doesn't exist
       if (!sendTransportRef.current && deviceRef.current) {
         // Properly extract and use TURN servers from the options
@@ -49,6 +56,12 @@ export const useWebRTC = (socket: Socket | null) => {
         const transport = deviceRef.current.createSendTransport(transportOptions);
         sendTransportRef.current = transport;
 
+        // Access the internal PeerConnection used by mediasoup-client
+        const handler = transport.handler as any;
+        if (handler && handler.pc) {
+          monitorPeerConnection(handler.pc, 'Send Transport');
+        }
+        
         transport.on('connect', async ({ dtlsParameters }, callback) => {
           console.log('Send transport connecting...');
           socket.emit(
@@ -192,6 +205,13 @@ export const useWebRTC = (socket: Socket | null) => {
     socket.once('transportCreated', async (options: any) => {
       console.log('Receive transport options received:', options);
       
+      // Check if turnServers are properly configured
+      if (!options.turnServers || !options.turnServers.length) {
+        console.error('[ICE] No TURN servers provided by the server!');
+      } else {
+        logIceServers(options.turnServers);
+      }
+      
       // Properly extract and use TURN servers from the options
       const transportOptions = {
         id: options.id,
@@ -204,8 +224,12 @@ export const useWebRTC = (socket: Socket | null) => {
       console.log('Creating receive transport with TURN servers:', options.turnServers);
       const transport = deviceRef.current!.createRecvTransport(transportOptions);
 
-      console.log(`Storing transport for peer ${data.peerId}, ID: ${transport.id}`);
-
+      // Access the internal PeerConnection used by mediasoup-client
+      const handler = transport.handler as any;
+      if (handler && handler.pc) {
+        monitorPeerConnection(handler.pc, `Receive Transport (${data.peerId})`);
+      }
+      
       transport.on('connect', async ({ dtlsParameters }, callback) => {
         console.log('Recv transport connecting...');
         socket.emit(
@@ -451,6 +475,114 @@ export const useWebRTC = (socket: Socket | null) => {
       setActiveVideoId(remotePeers[0].peerId);
     }
   }, [remotePeers, activeVideoId]);
+
+  // Add this near the top of your file, inside the useWebRTC hook
+
+  const monitorPeerConnection = (pc: RTCPeerConnection, description: string) => {
+    console.log(`[ICE] Monitoring connection: ${description}`);
+
+    // Log all ICE candidates
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        console.log(`[ICE] ${description} candidate: 
+          type: ${event.candidate.type} 
+          protocol: ${event.candidate.protocol}
+          address: ${event.candidate.address}
+          port: ${event.candidate.port}
+          relayProtocol: ${(event.candidate as any).relayProtocol || 'none'}
+          server: ${event.candidate.relatedAddress ? `${event.candidate.relatedAddress}:${event.candidate.relatedPort}` : 'none'}
+          candidate: ${event.candidate.candidate}
+        `);
+      }
+    };
+
+    // Track ICE connection state
+    pc.oniceconnectionstatechange = () => {
+      console.log(`[ICE] ${description} connection state changed: ${pc.iceConnectionState}`);
+      
+      if (pc.iceConnectionState === 'checking') {
+        console.log('[ICE] Checking ICE candidates...');
+      } else if (pc.iceConnectionState === 'connected') {
+        // When connected, log which candidate pair was selected
+        const selectedCandidatePair = getSelectedCandidatePair(pc);
+        console.log(`[ICE] Selected candidate pair for ${description}:`, selectedCandidatePair);
+      } else if (pc.iceConnectionState === 'failed') {
+        console.error('[ICE] Connection failed! TURN server might not be working properly');
+      }
+    };
+    
+    // Track gathering state
+    pc.onicegatheringstatechange = () => {
+      console.log(`[ICE] ${description} gathering state: ${pc.iceGatheringState}`);
+    };
+    
+    // Track signaling state
+    pc.onsignalingstatechange = () => {
+      console.log(`[ICE] ${description} signaling state: ${pc.signalingState}`);
+    };
+  };
+
+  // Helper to get the selected candidate pair (works in Chrome)
+  const getSelectedCandidatePair = async (pc: RTCPeerConnection) => {
+    if (!pc.getStats) return null;
+    
+    try {
+      const stats = await pc.getStats();
+      let selectedPair: RTCIceCandidatePairStats | null = null;
+      
+      stats.forEach(report => {
+        if (report.type === 'candidate-pair' && report.selected) {
+          selectedPair = report as RTCIceCandidatePairStats;
+        }
+      });
+      
+      if (selectedPair) {
+        // Create a properly typed non-null reference
+        const nonNullPair = selectedPair as RTCIceCandidatePairStats & {
+          localCandidateId: string;
+          remoteCandidateId: string;
+        };
+        let localCandidate = null;
+        let remoteCandidate = null;
+        
+        stats.forEach(report => {
+          if (report.id === nonNullPair.localCandidateId) {
+            localCandidate = report;
+          }
+          if (report.id === nonNullPair.remoteCandidateId) {
+            remoteCandidate = report;
+          }
+        });
+        
+        return {
+          local: localCandidate,
+          remote: remoteCandidate,
+          pair: selectedPair
+        };
+      }
+      return null;
+    } catch (e) {
+      console.error('[ICE] Error getting stats:', e);
+      return null;
+    }
+  };
+
+  // Function to log TURN servers being used
+  const logIceServers = (servers: RTCIceServer[]) => {
+    console.log('[ICE] Configured ICE servers:');
+    if (!servers || !servers.length) {
+      console.warn('[ICE] No ICE servers provided!');
+      return;
+    }
+    
+    servers.forEach((server, i) => {
+      console.log(`[ICE] Server ${i+1}:`, {
+        urls: server.urls,
+        username: server.username ? '✓' : '✗',
+        credential: server.credential ? '✓' : '✗'
+      });
+    });
+  };
 
   return {
     roomId,
