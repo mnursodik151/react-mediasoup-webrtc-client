@@ -112,55 +112,66 @@ export const useWebRTC = (socket: Socket | null) => {
   const captureMedia = async (transport: mediasoupClient.types.Transport, stream: MediaStream) => {
     try {
       const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack) {
-        console.log(`Producing video track with preferred codec: ${preferredCodec}`);
+      if (!videoTrack) {
+        console.warn('No video track found in stream');
+        return;
+      }
+      
+      if (videoTrack.readyState === 'ended') {
+        console.error('Video track is already ended');
+        return;
+      }
+
+      console.log(`Producing video track with preferred codec: ${preferredCodec}`);
+      
+      // Configure encodings for different bandwidth scenarios
+      const encodings = [
+        { maxBitrate: 300000, scaleResolutionDownBy: 4 },
+        { maxBitrate: 900000, scaleResolutionDownBy: 2 },
+        { maxBitrate: 1500000, scaleResolutionDownBy: 1 }
+      ];
+      
+      try {
+        // Find the requested codec in device capabilities
+        let codec = undefined;
+        if (preferredCodec) {
+          codec = deviceRef.current?.rtpCapabilities.codecs?.find(
+            c => c.mimeType.toLowerCase() === `video/${preferredCodec}`
+          );
+          console.log('Found matching codec:', codec);
+        }
         
-        // Configure codec options and encodings for better performance in limited bandwidth
-        const codecOptions = {
-          videoGoogleStartBitrate: 1000 // Starting bitrate in kbps
-        };
-        
-        // Create simulcast encodings for different bandwidth scenarios
-        const encodings = [
-          { maxBitrate: 300000, scaleResolutionDownBy: 4, priority: "low" as const },
-          { maxBitrate: 900000, scaleResolutionDownBy: 2, priority: "medium" as const },
-          { maxBitrate: 1500000, scaleResolutionDownBy: 1, priority: "high" as const }
-        ];
-        
-        try {
-          // Find the requested codec in device capabilities
-          let codec = undefined;
-          if (preferredCodec) {
-            codec = deviceRef.current?.rtpCapabilities.codecs?.find(
-              c => c.mimeType.toLowerCase() === `video/${preferredCodec}`
-            );
-            console.log('Found matching codec:', codec);
-          }
+        if (codec) {
+          // Create a codec object with the required RtpCodecCapability properties
+          const minimalCodec = {
+            mimeType: codec.mimeType,
+            kind: codec.kind,
+            clockRate: codec.clockRate
+          };
           
-          if (codec) {
-            // Use simplified codec approach - only pass mimeType and payloadType to avoid incompatible parameters
-            const safeCodec = {
-              kind: 'video' as mediasoupClient.types.MediaKind,  // Correctly type as MediaKind
-              mimeType: codec.mimeType,
-              payloadType: codec.preferredPayloadType,
-              clockRate: codec.clockRate,
-              channels: codec.channels
-            };
-            
-            await transport.produce({
-              track: videoTrack,
-              encodings,
-              codecOptions,
-              codec: safeCodec
-            });
-          } else {
-            console.warn(`Using default codec as ${preferredCodec} not available or selected`);
-            await transport.produce({ track: videoTrack, encodings });
-          }
-        } catch (codecError) {
-          console.warn('Error using preferred codec, falling back to default:', codecError);
-          // If codec selection fails, fall back to default codec selection
+          console.log('Using minimal codec configuration:', minimalCodec);
+          await transport.produce({
+            track: videoTrack,
+            encodings,
+            codec: minimalCodec
+          });
+        } else {
+          console.warn(`Using default codec as ${preferredCodec} not available or selected`);
           await transport.produce({ track: videoTrack, encodings });
+        }
+      } catch (codecError) {
+        console.warn('Error using preferred codec, falling back to default:', codecError);
+        
+        // Check if track is still valid before attempting to produce again
+        if (videoTrack.readyState === 'live') {
+          // If codec selection fails, fall back to default with no codec specification
+          await transport.produce({ 
+            track: videoTrack,
+            encodings: [{ maxBitrate: 1000000 }] // Simplified encoding
+          });
+        } else {
+          console.error('Track became unavailable after codec error');
+          throw new Error('Video track ended during codec negotiation');
         }
       }
     } catch (error) {
