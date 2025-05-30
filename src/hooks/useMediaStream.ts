@@ -5,13 +5,14 @@ export const useMediaStream = () => {
   const [isVideoOff, setIsVideoOff] = useState(false);
   const localStreamRef = useRef<MediaStream | null>(null);
   
-  // Add resolution configuration
-  const [currentResolution, setCurrentResolution] = useState<'low' | 'medium' | 'high'>('medium');
+  // Always use low resolution for bandwidth optimization
+  const [currentResolution, setCurrentResolution] = useState<'low' | 'medium' | 'high'>('low');
 
-  const getMediaStream = async (resolution: 'low' | 'medium' | 'high' = 'medium'): Promise<MediaStream> => {
+  const getMediaStream = async (resolution: 'low' | 'medium' | 'high' = 'low'): Promise<MediaStream> => {
     try {
-      // Store the selected resolution
-      setCurrentResolution(resolution);
+      // Always use low resolution regardless of input parameter (for bandwidth optimization)
+      const actualResolution = 'low';
+      setCurrentResolution(actualResolution);
       
       // Define resolution presets
       const resolutionPresets = {
@@ -23,7 +24,7 @@ export const useMediaStream = () => {
       const constraints = {
         video: {
           facingMode: 'user',
-          ...resolutionPresets[resolution]
+          ...resolutionPresets[actualResolution]
         },
         audio: {
           echoCancellation: true,
@@ -32,7 +33,7 @@ export const useMediaStream = () => {
         }
       };
       
-      console.log(`Requesting media with ${resolution} resolution constraints:`, constraints);
+      console.log(`Requesting media with low resolution for bandwidth optimization:`, constraints);
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
       console.log('Media stream obtained:', stream, 'with actual resolution:', 
@@ -74,30 +75,6 @@ export const useMediaStream = () => {
     }
   }, []);
 
-  // Add this function inside the useMediaStream hook
-  const updateResolution = useCallback(async (newResolution: 'low' | 'medium' | 'high') => {
-    if (newResolution !== currentResolution) {
-      console.log(`Updating resolution from ${currentResolution} to ${newResolution}`);
-      
-      // Stop current stream if it exists
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
-      }
-      
-      // Get new stream with updated resolution
-      try {
-        const newStream = await getMediaStream(newResolution);
-        return newStream;
-      } catch (error) {
-        console.error('Failed to update resolution:', error);
-        throw error;
-      }
-    }
-    
-    return localStreamRef.current;
-  }, [currentResolution, getMediaStream]);
-
-  // Add updateResolution to the return object
   return {
     localStreamRef,
     isMuted,
@@ -105,7 +82,6 @@ export const useMediaStream = () => {
     currentResolution,
     setCurrentResolution,
     getMediaStream,
-    updateResolution, // Add this new function
     toggleMute,
     toggleVideo,
     cleanupMedia

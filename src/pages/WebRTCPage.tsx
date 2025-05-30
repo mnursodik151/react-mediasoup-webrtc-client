@@ -44,6 +44,7 @@ export default function MediaRoom() {
     cleanupMedia,
     currentResolution,
     setCurrentResolution
+    // updateResolution // Commented out for bandwidth optimization
   } = useMediaStream();
 
   const {
@@ -311,7 +312,8 @@ export default function MediaRoom() {
         />
       )}
 
-      {/* Settings panel for video quality and codec */}
+      {/* Settings panel removed for bandwidth optimization */}
+      {/* 
       <div className="settings-panel">
         <div className="setting-group">
           <label>Video Quality:</label>
@@ -354,6 +356,7 @@ export default function MediaRoom() {
           </select>
         </div>
       </div>
+      */}
     </div>
   );
 
