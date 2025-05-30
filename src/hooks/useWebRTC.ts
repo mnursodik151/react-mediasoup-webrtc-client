@@ -21,6 +21,7 @@ export const useWebRTC = (socket: Socket | null) => {
   const sendTransportRef = useRef<mediasoupClient.types.Transport | null>(null);
   const recvTransportRef = useRef<mediasoupClient.types.Transport | null>(null);
   const peerStreams = useRef<Map<string, MediaStream>>(new Map());
+  const candidateCounter = useRef<Record<string, number>>({}).current;
 
   const createSendTransport = useCallback(async (stream: MediaStream, peerIdentifier: string) => {
     if (!socket) return;
@@ -49,7 +50,13 @@ export const useWebRTC = (socket: Socket | null) => {
           iceParameters: options.iceParameters,
           iceCandidates: options.iceCandidates,
           dtlsParameters: options.dtlsParameters,
-          iceServers: options.turnServers // Use the TURN servers from server
+          iceServers: options.turnServers,
+          // Add these configurations to encourage TURN usage
+          iceTransportPolicy: 'relay' as RTCIceTransportPolicy, // Force using relay candidates only
+          additionalIceParameters: {
+            iceLite: false, // Ensure full ICE implementation
+            iceControlling: true // Try to take control of ICE negotiation
+          }
         };
         
         console.log('Creating send transport with TURN servers:', options.turnServers);
@@ -218,7 +225,13 @@ export const useWebRTC = (socket: Socket | null) => {
         iceParameters: options.iceParameters,
         iceCandidates: options.iceCandidates,
         dtlsParameters: options.dtlsParameters,
-        iceServers: options.turnServers // Use the TURN servers from server
+        iceServers: options.turnServers,
+        // Add these configurations to encourage TURN usage
+        iceTransportPolicy: 'relay' as RTCIceTransportPolicy, // Force using relay candidates only
+        additionalIceParameters: {
+          iceLite: false, // Ensure full ICE implementation
+          iceControlling: true // Try to take control of ICE negotiation
+        }
       };
       
       console.log('Creating receive transport with TURN servers:', options.turnServers);
@@ -478,47 +491,49 @@ export const useWebRTC = (socket: Socket | null) => {
 
   // Add this near the top of your file, inside the useWebRTC hook
 
+  // Enhance the monitorPeerConnection function
   const monitorPeerConnection = (pc: RTCPeerConnection, description: string) => {
     console.log(`[ICE] Monitoring connection: ${description}`);
 
     // Log all ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        console.log(`[ICE] ${description} candidate: 
-          type: ${event.candidate.type} 
+        const candidateType = event.candidate.type || 'unknown';
+        candidateCounter[candidateType] = (candidateCounter[candidateType] || 0) + 1;
+        
+        console.log(`[ICE] ${description} candidate ${candidateCounter[candidateType]} (${candidateType}): 
           protocol: ${event.candidate.protocol}
           address: ${event.candidate.address}
           port: ${event.candidate.port}
           relayProtocol: ${(event.candidate as any).relayProtocol || 'none'}
-          server: ${event.candidate.relatedAddress ? `${event.candidate.relatedAddress}:${event.candidate.relatedPort}` : 'none'}
-          candidate: ${event.candidate.candidate}
+          timestamp: ${new Date().toISOString()}
         `);
       }
     };
-
-    // Track ICE connection state
+    
+    // Enhanced state tracking with timestamps
     pc.oniceconnectionstatechange = () => {
-      console.log(`[ICE] ${description} connection state changed: ${pc.iceConnectionState}`);
+      console.log(`[ICE] ${description} connection state changed: ${pc.iceConnectionState} at ${new Date().toISOString()}`);
       
       if (pc.iceConnectionState === 'checking') {
-        console.log('[ICE] Checking ICE candidates...');
-      } else if (pc.iceConnectionState === 'connected') {
-        // When connected, log which candidate pair was selected
-        const selectedCandidatePair = getSelectedCandidatePair(pc);
-        console.log(`[ICE] Selected candidate pair for ${description}:`, selectedCandidatePair);
+        console.log(`[ICE] Checking ICE candidates (host: ${candidateCounter.host || 0}, srflx: ${candidateCounter.srflx || 0}, relay: ${candidateCounter.relay || 0})`);
       } else if (pc.iceConnectionState === 'failed') {
-        console.error('[ICE] Connection failed! TURN server might not be working properly');
+        // Log ICE failure details and add advanced diagnostics
+        console.error(`[ICE] Connection failed with ${candidateCounter.relay || 0} relay candidates!`);
+        
+        // Force ICE restart on failure (if supported)
+        try {
+          pc.restartIce?.();
+          console.log('[ICE] Attempted ICE restart');
+        } catch (e) {
+          console.warn('[ICE] ICE restart not supported or failed', e);
+        }
+        
+        // Log all available stats on failure
+        pc.getStats().then(stats => {
+          console.log('[ICE] Connection stats at failure:', Array.from(stats.values()));
+        });
       }
-    };
-    
-    // Track gathering state
-    pc.onicegatheringstatechange = () => {
-      console.log(`[ICE] ${description} gathering state: ${pc.iceGatheringState}`);
-    };
-    
-    // Track signaling state
-    pc.onsignalingstatechange = () => {
-      console.log(`[ICE] ${description} signaling state: ${pc.signalingState}`);
     };
   };
 
@@ -582,6 +597,86 @@ export const useWebRTC = (socket: Socket | null) => {
         credential: server.credential ? '✓' : '✗'
       });
     });
+  };
+
+  // Add this code to test your TURN server directly
+  // filepath: d:\Projects\io3-vsion-backends\sfu-web-client\src\hooks\useWebRTC.ts
+
+  // Add this function to your hook
+  const testTurnServer = useCallback((turnServer: RTCIceServer) => {
+    console.log('[ICE] Testing TURN server:', turnServer);
+    
+    const pc1 = new RTCPeerConnection({ iceServers: [turnServer] });
+    const pc2 = new RTCPeerConnection({ iceServers: [turnServer] });
+    
+    // Monitor both connections
+    monitorPeerConnection(pc1, 'TEST PC1');
+    monitorPeerConnection(pc2, 'TEST PC2');
+    
+    pc1.onicecandidate = e => e.candidate && pc2.addIceCandidate(e.candidate);
+    pc2.onicecandidate = e => e.candidate && pc1.addIceCandidate(e.candidate);
+    
+    // Create a data channel to trigger ICE connection
+    const dc = pc1.createDataChannel('test');
+    dc.onopen = () => console.log('[ICE] TEST CONNECTION SUCCEEDED - TURN server works!');
+    
+    // Create offer/answer to establish connection
+    pc1.createOffer()
+      .then(offer => pc1.setLocalDescription(offer))
+      .then(() => pc2.setRemoteDescription(pc1.localDescription!))
+      .then(() => pc2.createAnswer())
+      .then(answer => pc2.setLocalDescription(answer))
+      .then(() => pc1.setRemoteDescription(pc2.localDescription!))
+      .catch(err => console.error('[ICE] Test failed:', err));
+    
+    // Cleanup after 15 seconds
+    setTimeout(() => {
+      pc1.close();
+      pc2.close();
+    }, 15000);
+  }, []);
+
+  // Add this function to test TURN servers when needed
+  const setupTurnServerTest = useCallback(() => {
+    if (!socket) return;
+    
+    socket.once('transportCreated', async (options: any) => {
+      if (options.turnServers && options.turnServers.length) {
+        // Test each TURN server independently
+        options.turnServers.forEach(testTurnServer);
+      }
+    });
+  }, [socket, testTurnServer]);
+  
+  // You can call setupTurnServerTest() within joinRoom if you want to test TURN servers
+
+  // Add this function to test basic TURN server connectivity
+  const checkTurnServerAccess = async (turnServer: RTCIceServer): Promise<boolean> => {
+    try {
+      // Simple fetch test to see if server is reachable
+      // Extract server domain from URLs
+      const urls = Array.isArray(turnServer.urls) ? turnServer.urls[0] : turnServer.urls;
+      const serverUrl = urls.replace(/^(turn|stun)s?:\/\//, 'https://');
+      const domainOnly = serverUrl.split(':')[0];
+      
+      console.log(`[ICE] Testing basic connectivity to TURN server domain: ${domainOnly}`);
+      
+      // Just perform a HEAD request to see if server is online
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      
+      const response = await fetch(`https://${domainOnly}/`, {
+        method: 'HEAD',
+        mode: 'no-cors',
+        signal: controller.signal
+      }).catch(() => null);
+      
+      clearTimeout(timeoutId);
+      return !!response;
+    } catch (err) {
+      console.warn('[ICE] TURN server domain connection test failed:', err);
+      return false;
+    }
   };
 
   return {
