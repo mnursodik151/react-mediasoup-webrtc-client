@@ -23,6 +23,10 @@ export const useWebRTC = (socket: Socket | null) => {
   const peerStreams = useRef<Map<string, MediaStream>>(new Map());
   const candidateCounter = useRef<Record<string, number>>({}).current;
 
+  // Add these at the beginning of the hook function
+  const connectionStatsRef = useRef<Record<string, any>>({});
+  const [connectionStats, setConnectionStats] = useState<Record<string, any>>({});
+
   const createSendTransport = useCallback(async (stream: MediaStream, peerIdentifier: string) => {
     if (!socket) return;
     
@@ -67,6 +71,16 @@ export const useWebRTC = (socket: Socket | null) => {
         const handler = transport.handler as any;
         if (handler && handler.pc) {
           monitorPeerConnection(handler.pc, 'Send Transport');
+          // Add this line:
+          const monitorInterval = monitorDataFlow(handler.pc, 'Send Transport');
+          
+          // Clean up the monitoring when the transport closes
+          const existingConnectionHandler = transport.on('connectionstatechange', async (state) => {
+            console.log('Send transport connection state:', state);
+            if (state === 'closed') {
+              clearInterval(monitorInterval);
+            }
+          });
         }
         
         transport.on('connect', async ({ dtlsParameters }, callback) => {
@@ -679,6 +693,168 @@ export const useWebRTC = (socket: Socket | null) => {
     }
   };
 
+  // Add this function to monitor data flow
+  const monitorDataFlow = (pc: RTCPeerConnection, description: string) => {
+    let lastBytesSent = 0;
+    let lastBytesReceived = 0;
+    let lastTimestamp = Date.now();
+    
+    // Initialize stats for this connection
+    if (!connectionStatsRef.current[description]) {
+      connectionStatsRef.current[description] = {
+        connectionState: pc.iceConnectionState,
+        candidates: { host: 0, srflx: 0, relay: 0 },
+        dataFlow: {
+          sendBitrate: 0,
+          receiveBitrate: 0,
+          totalBytesSent: 0,
+          totalBytesReceived: 0,
+          timestamp: Date.now()
+        },
+        tracks: {
+          sending: [] as any[],
+          receiving: [] as any[]
+        }
+      };
+    }
+    
+    // Update connection state
+    pc.oniceconnectionstatechange = () => {
+      console.log(`[ICE] ${description} connection state changed: ${pc.iceConnectionState}`);
+      
+      if (!connectionStatsRef.current[description]) return;
+      
+      connectionStatsRef.current[description].connectionState = pc.iceConnectionState;
+      setConnectionStats({...connectionStatsRef.current});
+      
+      // Rest of your existing code...
+    };
+    
+    // Update candidates
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        const candidateType = event.candidate.type || 'unknown';
+        
+        if (!connectionStatsRef.current[description]) return;
+        
+        if (!connectionStatsRef.current[description].candidates[candidateType]) {
+          connectionStatsRef.current[description].candidates[candidateType] = 0;
+        }
+        
+        connectionStatsRef.current[description].candidates[candidateType]++;
+        setConnectionStats({...connectionStatsRef.current});
+        
+        // Rest of your existing code...
+      }
+    };
+    
+    // Update track info initially
+    const updateTrackInfo = () => {
+      const senders = pc.getSenders().map(sender => ({
+        kind: sender.track?.kind || 'unknown',
+        enabled: sender.track?.enabled || false,
+        muted: sender.track?.muted || false
+      }));
+      
+      const receivers = pc.getReceivers().map(receiver => ({
+        kind: receiver.track?.kind || 'unknown',
+        enabled: receiver.track?.enabled || false,
+        muted: receiver.track?.muted || false
+      }));
+      
+      connectionStatsRef.current[description].tracks = {
+        sending: senders,
+        receiving: receivers
+      };
+      
+      setConnectionStats({...connectionStatsRef.current});
+    };
+    
+    // Call initially and on track events
+    updateTrackInfo();
+    pc.ontrack = () => updateTrackInfo();
+    
+    const interval = setInterval(async () => {
+      try {
+        const stats = await pc.getStats();
+        let totalBytesSent = 0;
+        let totalBytesReceived = 0;
+        
+        stats.forEach(report => {
+          // Check for outbound-rtp (sending data)
+          if (report.type === 'outbound-rtp' && report.bytesSent) {
+            totalBytesSent += report.bytesSent;
+          }
+          
+          // Check for inbound-rtp (receiving data)
+          if (report.type === 'inbound-rtp' && report.bytesReceived) {
+            totalBytesReceived += report.bytesReceived;
+          }
+        });
+        
+        // Calculate bitrates
+        const now = Date.now();
+        const duration = (now - lastTimestamp) / 1000; // seconds
+        const sendBitrate = ((totalBytesSent - lastBytesSent) * 8 / duration) / 1000; // kbps
+        const receiveBitrate = ((totalBytesReceived - lastBytesReceived) * 8 / duration) / 1000; // kbps
+        
+        // Update for next calculation
+        lastBytesSent = totalBytesSent;
+        lastBytesReceived = totalBytesReceived;
+        lastTimestamp = now;
+        
+        // Update stats ref
+        if (connectionStatsRef.current[description]) {
+          connectionStatsRef.current[description].dataFlow = {
+            sendBitrate,
+            receiveBitrate,
+            totalBytesSent,
+            totalBytesReceived,
+            timestamp: now
+          };
+          
+          // Update state to trigger re-render
+          setConnectionStats({...connectionStatsRef.current});
+        }
+        
+        if (sendBitrate > 0 || receiveBitrate > 0) {
+          console.log(`[DATA] ${description} - Sending: ${sendBitrate.toFixed(2)} kbps, Receiving: ${receiveBitrate.toFixed(2)} kbps`);
+          console.log(`[DATA] ${description} - Total sent: ${(totalBytesSent/1024).toFixed(2)} KB, Total received: ${(totalBytesReceived/1024).toFixed(2)} KB`);
+        } else {
+          console.warn(`[DATA] ${description} - No data flowing!`);
+        }
+      } catch (e) {
+        console.error('[DATA] Error monitoring data flow:', e);
+      }
+    }, 3000); // Check every 3 seconds
+    
+    return interval;
+  };
+
+  const monitorTrackStatus = (pc: RTCPeerConnection, description: string) => {
+    pc.getSenders().forEach(sender => {
+      if (sender.track) {
+        console.log(`[TRACK] ${description} Sending track: ${sender.track.kind}, enabled: ${sender.track.enabled}, muted: ${sender.track.muted}`);
+        
+        // Monitor track state changes
+        sender.track.onended = () => console.log(`[TRACK] ${description} Sending ${sender.track!.kind} track ended`);
+        sender.track.onmute = () => console.log(`[TRACK] ${description} Sending ${sender.track!.kind} track muted`);
+        sender.track.onunmute = () => console.log(`[TRACK] ${description} Sending ${sender.track!.kind} track unmuted`);
+      }
+    });
+    
+    pc.getReceivers().forEach(receiver => {
+      if (receiver.track) {
+        console.log(`[TRACK] ${description} Receiving track: ${receiver.track.kind}, enabled: ${receiver.track.enabled}, muted: ${receiver.track.muted}`);
+        
+        // Monitor track state changes
+        receiver.track.onended = () => console.log(`[TRACK] ${description} Receiving ${receiver.track!.kind} track ended`);
+        receiver.track.onmute = () => console.log(`[TRACK] ${description} Receiving ${receiver.track!.kind} track muted`);
+        receiver.track.onunmute = () => console.log(`[TRACK] ${description} Receiving ${receiver.track!.kind} track unmuted`);
+      }
+    });
+  };
+
   return {
     roomId,
     setRoomId,
@@ -691,6 +867,7 @@ export const useWebRTC = (socket: Socket | null) => {
     leaveRoom,
     cleanupRoomResources,
     preferredCodec,
-    setPreferredCodec
+    setPreferredCodec,
+    connectionStats
   };
 };

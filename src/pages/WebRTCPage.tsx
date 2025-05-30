@@ -9,6 +9,8 @@ import MainVideo from '../components/Meeting/MainVideo';
 import ParticipantVideo from '../components/Meeting/ParticipantVideo';
 import ControlBar from '../components/Meeting/ControlBar';
 import ConnectionDebugger from '../components/Meeting/ConnectionDebugger';
+// Add import for the StatsMonitor
+import StatsMonitor from '../components/Meeting/StatsMonitor';
 
 // Import hooks
 import { useSocket } from '../hooks/useSocket';
@@ -59,7 +61,8 @@ export default function MediaRoom() {
     leaveRoom,
     cleanupRoomResources,
     preferredCodec,
-    setPreferredCodec
+    setPreferredCodec,
+    connectionStats // Add this line
   } = useWebRTC(socket);
 
   // Local state for UI
@@ -357,6 +360,8 @@ export default function MediaRoom() {
         </div>
       </div>
       */}
+      {/* Add StatsMonitor component */}
+      <StatsMonitor stats={connectionStats} />
     </div>
   );
 

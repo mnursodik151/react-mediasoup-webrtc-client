@@ -1,0 +1,102 @@
+.stats-monitor {
+  position: absolute;
+  bottom: 80px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  border-radius: 8px;
+  width: 300px;
+  max-height: 500px;
+  overflow: auto;
+  z-index: 100;
+  font-size: 12px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+  transition: all 0.3s ease;
+}
+
+.stats-monitor.expanded {
+  width: 400px;
+}
+
+.stats-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(60, 60, 60, 0.9);
+  cursor: pointer;
+}
+
+.stats-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.stats-content {
+  padding: 12px;
+}
+
+.connection-stats {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.connection-stats h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #4CAF50;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.stat-label {
+  font-weight: 500;
+  color: #CCC;
+}
+
+.state-connected, .state-completed {
+  color: #4CAF50;
+}
+
+.state-checking {
+  color: #FFC107;
+}
+
+.state-failed, .state-disconnected, .state-closed {
+  color: #F44336;
+}
+
+.tracks-container {
+  margin-top: 12px;
+}
+
+.tracks-container h5 {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+
+.tracks-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.track-column h6 {
+  margin: 0 0 4px;
+  font-size: 11px;
+  color: #BBB;
+}
+
+.track-item {
+  font-size: 11px;
+  padding: 2px 4px;
+  background: rgba(60, 60, 60, 0.5);
+  border-radius: 3px;
+  margin-bottom: 2px;
+}
