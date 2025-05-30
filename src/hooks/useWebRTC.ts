@@ -8,6 +8,9 @@ export type PeerStream = {
 };
 
 export const useWebRTC = (socket: Socket | null) => {
+  // Add codec configuration
+  const [preferredCodec, setPreferredCodec] = useState<'vp8' | 'vp9' | 'h264' | 'h265'>('h264');
+  
   const [roomId, setRoomId] = useState('');
   const [peerId, setPeerId] = useState('');
   const [isJoined, setIsJoined] = useState(false);
@@ -33,7 +36,17 @@ export const useWebRTC = (socket: Socket | null) => {
 
       // Only create transport if it doesn't exist
       if (!sendTransportRef.current && deviceRef.current) {
-        const transport = deviceRef.current.createSendTransport(options);
+        // Properly extract and use TURN servers from the options
+        const transportOptions = {
+          id: options.id,
+          iceParameters: options.iceParameters,
+          iceCandidates: options.iceCandidates,
+          dtlsParameters: options.dtlsParameters,
+          iceServers: options.turnServers // Use the TURN servers from server
+        };
+        
+        console.log('Creating send transport with TURN servers:', options.turnServers);
+        const transport = deviceRef.current.createSendTransport(transportOptions);
         sendTransportRef.current = transport;
 
         transport.on('connect', async ({ dtlsParameters }, callback) => {
@@ -100,7 +113,37 @@ export const useWebRTC = (socket: Socket | null) => {
     try {
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack) {
-        await transport.produce({ track: videoTrack });
+        console.log(`Producing video track with preferred codec: ${preferredCodec}`);
+        
+        // Configure codec options and encodings for better performance in limited bandwidth
+        const codecOptions = {
+          videoGoogleStartBitrate: 1000 // Starting bitrate in kbps
+        };
+        
+        // Create simulcast encodings for different bandwidth scenarios
+        const encodings = [
+          { maxBitrate: 300000, scaleResolutionDownBy: 4, priority: "low" as const },     // For very low bandwidth
+          { maxBitrate: 900000, scaleResolutionDownBy: 2, priority: "medium" as const },  // For medium bandwidth
+          { maxBitrate: 1500000, scaleResolutionDownBy: 1, priority: "high" as const }    // For high bandwidth
+        ];
+        
+        // Find the requested codec in device capabilities
+        const codec = deviceRef.current?.rtpCapabilities.codecs?.find(
+          c => c.mimeType.toLowerCase() === `video/${preferredCodec}`
+        );
+        
+        if (codec) {
+          console.log('Found matching codec:', codec);
+          await transport.produce({
+            track: videoTrack,
+            encodings,
+            codecOptions,
+            codec
+          });
+        } else {
+          console.warn(`Preferred codec ${preferredCodec} not available, using default`);
+          await transport.produce({ track: videoTrack, encodings });
+        }
       }
     } catch (error) {
       console.error('Error capturing media:', error);
@@ -119,7 +162,18 @@ export const useWebRTC = (socket: Socket | null) => {
 
     socket.once('transportCreated', async (options: any) => {
       console.log('Receive transport options received:', options);
-      const transport = deviceRef.current!.createRecvTransport(options);
+      
+      // Properly extract and use TURN servers from the options
+      const transportOptions = {
+        id: options.id,
+        iceParameters: options.iceParameters,
+        iceCandidates: options.iceCandidates,
+        dtlsParameters: options.dtlsParameters,
+        iceServers: options.turnServers // Use the TURN servers from server
+      };
+      
+      console.log('Creating receive transport with TURN servers:', options.turnServers);
+      const transport = deviceRef.current!.createRecvTransport(transportOptions);
 
       console.log(`Storing transport for peer ${data.peerId}, ID: ${transport.id}`);
 
@@ -379,6 +433,8 @@ export const useWebRTC = (socket: Socket | null) => {
     setActiveVideoId,
     joinRoom,
     leaveRoom,
-    cleanupRoomResources
+    cleanupRoomResources,
+    preferredCodec,
+    setPreferredCodec
   };
 };

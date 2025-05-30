@@ -41,7 +41,9 @@ export default function MediaRoom() {
     getMediaStream,
     toggleMute,
     toggleVideo,
-    cleanupMedia
+    cleanupMedia,
+    currentResolution,
+    setCurrentResolution
   } = useMediaStream();
 
   const {
@@ -54,7 +56,9 @@ export default function MediaRoom() {
     setActiveVideoId,
     joinRoom,
     leaveRoom,
-    cleanupRoomResources
+    cleanupRoomResources,
+    preferredCodec,
+    setPreferredCodec
   } = useWebRTC(socket);
 
   // Local state for UI
@@ -306,6 +310,50 @@ export default function MediaRoom() {
           onSubmit={handleInviteSubmit}
         />
       )}
+
+      {/* Settings panel for video quality and codec */}
+      <div className="settings-panel">
+        <div className="setting-group">
+          <label>Video Quality:</label>
+          <select 
+            value={currentResolution} 
+            onChange={async (e) => {
+              const newResolution = e.target.value as 'low' | 'medium' | 'high';
+              setCurrentResolution(newResolution);
+              
+              // If already in a call, update the stream with new resolution
+              if (isJoined && localStreamRef.current) {
+                try {
+                  const newStream = await getMediaStream(newResolution);
+                  if (localVideoRef.current) {
+                    localVideoRef.current.srcObject = newStream;
+                  }
+                  // You may need to update the published stream here depending on your WebRTC implementation
+                } catch (error) {
+                  console.error('Failed to update resolution during call:', error);
+                }
+              }
+            }}
+          >
+            <option value="low">Low (640x360) - Limited Bandwidth</option>
+            <option value="medium">Medium (1280x720)</option>
+            <option value="high">High (1920x1080)</option>
+          </select>
+        </div>
+        
+        <div className="setting-group">
+          <label>Preferred Codec:</label>
+          <select 
+            value={preferredCodec} 
+            onChange={(e) => setPreferredCodec(e.target.value as 'vp8' | 'vp9' | 'h264' | 'h265')}
+          >
+            <option value="h265">H.265 (HEVC) - Limited Support</option>
+            <option value="h264">H.264 - Better Compatibility</option>
+            <option value="vp9">VP9 - Good Quality/Compression</option>
+            <option value="vp8">VP8 - Fallback</option>
+          </select>
+        </div>
+      </div>
     </div>
   );
 

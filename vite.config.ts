@@ -13,5 +13,6 @@ export default defineConfig({
     },
     host: '0.0.0.0', // Listen on all network interfaces
     port: 5173, // Optional: Specify a custom port (default is 5173)
+    allowedHosts: ['localhost']
   },
 })
