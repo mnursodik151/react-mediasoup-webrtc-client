@@ -30,10 +30,21 @@ export const useWebRTC = (socket: Socket | null) => {
     // Use once instead of on to ensure the handler only executes once
     socket.once('transportCreated', async (options: any) => {
       console.log('Send transport options received:', options);
+      
+      // Extract TURN servers if available
+      const transportOptions = {
+        id: options.id,
+        iceParameters: options.iceParameters,
+        iceCandidates: options.iceCandidates,
+        dtlsParameters: options.dtlsParameters,
+        iceServers: options.turnServers || [] // Use the TURN servers provided by the server
+      };
+      
+      console.log('Configured transport with TURN servers:', transportOptions.iceServers);
 
       // Only create transport if it doesn't exist
       if (!sendTransportRef.current && deviceRef.current) {
-        const transport = deviceRef.current.createSendTransport(options);
+        const transport = deviceRef.current.createSendTransport(transportOptions);
         sendTransportRef.current = transport;
 
         transport.on('connect', async ({ dtlsParameters }, callback) => {
@@ -119,7 +130,19 @@ export const useWebRTC = (socket: Socket | null) => {
 
     socket.once('transportCreated', async (options: any) => {
       console.log('Receive transport options received:', options);
-      const transport = deviceRef.current!.createRecvTransport(options);
+      
+      // Extract TURN servers if available
+      const transportOptions = {
+        id: options.id,
+        iceParameters: options.iceParameters,
+        iceCandidates: options.iceCandidates,
+        dtlsParameters: options.dtlsParameters,
+        iceServers: options.turnServers || [] // Use the TURN servers provided by the server
+      };
+      
+      console.log('Configured receive transport with TURN servers:', transportOptions.iceServers);
+      
+      const transport = deviceRef.current!.createRecvTransport(transportOptions);
 
       console.log(`Storing transport for peer ${data.peerId}, ID: ${transport.id}`);
 
