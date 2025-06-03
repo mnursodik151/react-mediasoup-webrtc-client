@@ -7,18 +7,12 @@ import path from 'path'
 export default defineConfig({
   plugins: [react()],
   server: {
-    https: {
-      key: fs.readFileSync(path.resolve(__dirname, 'certs/server.key')),
-      cert: fs.readFileSync(path.resolve(__dirname, 'certs/server.cert')),
-    },
-    host: true,
+    //https: {
+    //  key: fs.readFileSync(path.resolve(__dirname, 'certs/server.key')),
+    //  cert: fs.readFileSync(path.resolve(__dirname, 'certs/server.cert')),
+    //},
+    host: '0.0.0.0', // Listen on all network interfaces
     port: 5173, // Optional: Specify a custom port (default is 5173)
-    allowedHosts: ['localhost'],
-    hmr: {
-      // Use the public domain for WebSocket connections
-      host: 'vsion.dev.saribautnet.co.id',
-      // If using HTTPS for your site
-      protocol: 'wss'
-    }
+    allowedHosts: ['localhost','dev.jarviss.io3.sg']
   },
 })
