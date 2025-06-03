@@ -9,7 +9,7 @@ export type PeerStream = {
 
 export const useWebRTC = (socket: Socket | null) => {
   // Add codec configuration
-  const [preferredCodec, setPreferredCodec] = useState<'vp8' | 'vp9' | 'h264' | 'h265'>('h264');
+  const [preferredCodec, setPreferredCodec] = useState<'vp8' | 'vp9' | 'h264' | 'h265'>('vp8');
   
   const [roomId, setRoomId] = useState('');
   const [peerId, setPeerId] = useState('');
