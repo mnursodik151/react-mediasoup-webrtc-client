@@ -56,7 +56,6 @@ export const useWebRTC = (socket: Socket | null) => {
           dtlsParameters: options.dtlsParameters,
           iceServers: options.turnServers,
           // Add these configurations to encourage TURN usage
-          iceTransportPolicy: 'relay' as RTCIceTransportPolicy, // Force using relay candidates only
           additionalIceParameters: {
             iceLite: false, // Ensure full ICE implementation
             iceControlling: true // Try to take control of ICE negotiation

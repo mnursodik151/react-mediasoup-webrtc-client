@@ -75,6 +75,24 @@ export default function MediaRoom() {
   const [acceptingInvitation, setAcceptingInvitation] = useState<boolean>(false);
   const [invitationError, setInvitationError] = useState<string | null>(null);
 
+  // Add these states near your existing state declarations
+  const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
+  const [savedRoomState, setSavedRoomState] = useState<{
+    roomId: string;
+    peerId: string;
+  } | null>(null);
+
+  // Add this function to check browser compatibility
+  const checkMediaDeviceSupport = () => {
+    if (!navigator || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return {
+        supported: false,
+        reason: "Your browser does not support media devices access. Please use a modern browser like Chrome, Firefox, or Edge."
+      };
+    }
+    return { supported: true };
+  };
+
   // Handle joining a room
   const handleJoinRoom = async () => {
     if (!socket) {
@@ -83,20 +101,62 @@ export default function MediaRoom() {
       return;
     }
 
+    // Check browser compatibility before attempting to access media
+    const mediaSupport = checkMediaDeviceSupport();
+    if (!mediaSupport.supported) {
+      alert(mediaSupport.reason);
+      return;
+    }
+
     try {
       console.log('Requesting user media...');
-      const stream = await getMediaStream();
+      
+      // Set default codec and resolution when getting first media stream
+      setPreferredCodec('vp8'); // Set default codec
+      setCurrentResolution('medium'); // Set default resolution
+      
+      const stream = await getMediaStream('medium').catch(error => {
+        console.error('Media access error:', error);
+        
+        // Handle permission denied errors specifically
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+          throw new Error('Camera/microphone permission denied. Please allow access to join with video.');
+        }
+        
+        throw error; // Re-throw other errors
+      });
+      
       console.log('User media obtained:', stream);
 
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
-        await localVideoRef.current.play();
+        await localVideoRef.current.play().catch(error => {
+          console.warn('Error playing local video:', error);
+        });
         console.log('Local video stream set.');
       }
 
       await joinRoom(stream);
     } catch (error) {
       console.error('Error joining room:', error);
+      
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error accessing media devices';
+      
+      // Ask user if they want to proceed without media
+      if (window.confirm(`${errorMessage}\n\nWould you like to join without camera/microphone?`)) {
+        // Join with empty stream or audio only as fallback
+        try {
+          // Try to join with audio only if video failed
+          const audioOnlyStream = await navigator.mediaDevices
+            .getUserMedia({ audio: true, video: false })
+            .catch(() => null);
+            
+          await joinRoom(audioOnlyStream);
+        } catch (fallbackError) {
+          console.error('Failed to join with fallback options:', fallbackError);
+          alert('Could not join meeting. Please check your device permissions and try again.');
+        }
+      }
     }
   };
 
@@ -259,86 +319,18 @@ export default function MediaRoom() {
   }, [activeVideoId, activeStream, remotePeers]);
 
   // Add at the end of the component, right before the final return statement
-  const renderMeetingRoom = () => (
-    <div className="meeting-room">
-      <div className="main-area">
-        <MainVideo activeStream={activeStream} activeVideoId={activeVideoId} />
-      </div>
-
-      <div className="participants-strip">
-        <ParticipantVideo
-          stream={localStreamRef.current!}
-          peerId="local"
-          isActive={activeVideoId === 'local'}
-          isLocal={true}
-          onClick={() => setActiveVideoId('local')}
-        />
-
-        {remotePeers.map(({ peerId, stream }) => (
-          <ParticipantVideo
-            key={peerId}
-            stream={stream}
-            peerId={peerId}
-            isActive={activeVideoId === peerId}
-            onClick={() => setActiveVideoId(peerId)}
-          />
-        ))}
-      </div>
-
-      <ControlBar
-        isMuted={isMuted}
-        isVideoOff={isVideoOff}
-        onToggleMute={toggleMute}
-        onToggleVideo={toggleVideo}
-        onOpenInvite={() => setShowInviteModal(true)}
-        onDisconnect={handleDisconnect}
-        onOpenSettings={() => setShowConfigModal(true)}
-      />
-
-      {/* Add connection debugger */}
-      <ConnectionDebugger
-        socketConnected={!!socket && socket.connected}
-        mediasoupLoaded={!!useWebRTC}
-        remotePeers={remotePeers}
-        roomId={roomId}
-        peerId={peerId}
-      />
-
-      {/* Render invite modal only in meeting room */}
-      {showInviteModal && (
-        <InviteModal
-          inviteUserIds={inviteUserIds}
-          setInviteUserIds={setInviteUserIds}
-          invitationStatus={invitationStatus}
-          onClose={() => setShowInviteModal(false)}
-          onSubmit={handleInviteSubmit}
-        />
-      )}
-
-      {/* Settings panel removed for bandwidth optimization */}
-      {/* 
+  const renderMeetingRoom = () => {
+    // Add this code inside your renderMeetingRoom function, before the return statement
+    const renderSettingsPanel = () => (
       <div className="settings-panel">
         <div className="setting-group">
           <label>Video Quality:</label>
           <select 
             value={currentResolution} 
-            onChange={async (e) => {
-              const newResolution = e.target.value as 'low' | 'medium' | 'high';
-              setCurrentResolution(newResolution);
-              
-              // If already in a call, update the stream with new resolution
-              if (isJoined && localStreamRef.current) {
-                try {
-                  const newStream = await getMediaStream(newResolution);
-                  if (localVideoRef.current) {
-                    localVideoRef.current.srcObject = newStream;
-                  }
-                  // You may need to update the published stream here depending on your WebRTC implementation
-                } catch (error) {
-                  console.error('Failed to update resolution during call:', error);
-                }
-              }
+            onChange={(e) => {
+              reconfigureMediaStream(e.target.value as 'low' | 'medium' | 'high', preferredCodec);
             }}
+            disabled={isReconnecting}
           >
             <option value="low">Low (640x360) - Limited Bandwidth</option>
             <option value="medium">Medium (1280x720)</option>
@@ -347,32 +339,95 @@ export default function MediaRoom() {
         </div>
         
         <div className="setting-group">
-          <label>Preferred Codec:</label>
+          <label>Video Codec:</label>
           <select 
             value={preferredCodec} 
-            onChange={(e) => setPreferredCodec(e.target.value as 'vp8' | 'vp9' | 'h264' | 'h265')}
+            onChange={(e) => {
+              reconfigureMediaStream(currentResolution, e.target.value as 'vp8' | 'vp9' | 'h264' | 'h265');
+            }}
+            disabled={isReconnecting}
           >
-            <option value="h265">H.265 (HEVC) - Limited Support</option>
-            <option value="h264">H.264 - Better Compatibility</option>
-            <option value="vp9">VP9 - Good Quality/Compression</option>
-            <option value="vp8">VP8 - Fallback</option>
+            <option value="h265">H.265 (HEVC) - Better Quality</option>
+            <option value="h264">H.264 - Good Compatibility</option>
+            <option value="vp9">VP9 - Good Compression</option>
+            <option value="vp8">VP8 - Best Compatibility</option>
           </select>
         </div>
       </div>
-      */}
-      {/* Add StatsMonitor component */}
-      <StatsMonitor stats={connectionStats} />
+    );
 
-      {/* Debug button for connection stats */}
-      <button
-        className="debug-button"
-        onClick={debugStats}
-        style={{ position: 'absolute', bottom: '10px', left: '10px', zIndex: 100 }}
-      >
-        Debug Stats
-      </button>
-    </div>
-  );
+    return (
+      <div className="meeting-room">
+        <div className="main-area">
+          <MainVideo activeStream={activeStream} activeVideoId={activeVideoId} />
+        </div>
+
+        <div className="participants-strip">
+          <ParticipantVideo
+            stream={localStreamRef.current!}
+            peerId="local"
+            isActive={activeVideoId === 'local'}
+            isLocal={true}
+            onClick={() => setActiveVideoId('local')}
+          />
+
+          {remotePeers.map(({ peerId, stream }) => (
+            <ParticipantVideo
+              key={peerId}
+              stream={stream}
+              peerId={peerId}
+              isActive={activeVideoId === peerId}
+              onClick={() => setActiveVideoId(peerId)}
+            />
+          ))}
+        </div>
+
+        <ControlBar
+          isMuted={isMuted}
+          isVideoOff={isVideoOff}
+          onToggleMute={toggleMute}
+          onToggleVideo={toggleVideo}
+          onOpenInvite={() => setShowInviteModal(true)}
+          onDisconnect={handleDisconnect}
+          onOpenSettings={() => setShowConfigModal(true)}
+        />
+
+        {/* Add the new settings panel */}
+        {renderSettingsPanel()}
+
+        {/* Existing components */}
+        <ConnectionDebugger
+          socketConnected={!!socket && socket.connected}
+          mediasoupLoaded={!!useWebRTC}
+          remotePeers={remotePeers}
+          roomId={roomId}
+          peerId={peerId}
+        />
+
+        {/* Existing modals and components */}
+        {showInviteModal && (
+          <InviteModal
+            inviteUserIds={inviteUserIds}
+            setInviteUserIds={setInviteUserIds}
+            invitationStatus={invitationStatus}
+            onClose={() => setShowInviteModal(false)}
+            onSubmit={handleInviteSubmit}
+          />
+        )}
+
+        <StatsMonitor stats={connectionStats} />
+
+        {/* Debug button */}
+        <button
+          className="debug-button"
+          onClick={debugStats}
+          style={{ position: 'absolute', bottom: '10px', left: '10px', zIndex: 100 }}
+        >
+          Debug Stats
+        </button>
+      </div>
+    );
+  };
 
   const debugStats = () => {
     console.log("Current connection stats:", connectionStats);
@@ -387,10 +442,85 @@ export default function MediaRoom() {
     }
   };
 
-  // Modify the return statement to use the renderMeetingRoom function
+  // Add this function to your component
+  const reconfigureMediaStream = async (
+    newResolution: 'low' | 'medium' | 'high' = currentResolution,
+    newCodec: 'vp8' | 'vp9' | 'h264' | 'h265' = preferredCodec
+  ) => {
+    if (!isJoined || !socket) {
+      console.error('Cannot reconfigure: Not in a meeting');
+      return;
+    }
+
+    try {
+      // Step 1: Save current room state
+      setSavedRoomState({
+        roomId: roomId,
+        peerId: peerId
+      });
+
+      // Step 2: Show reconnection UI
+      setIsReconnecting(true);
+
+      console.log(`Reconfiguring media with resolution: ${newResolution}, codec: ${newCodec}`);
+      
+      // Step 3: Update codec preference (this doesn't require reconnection but we'll do it anyway)
+      setPreferredCodec(newCodec);
+      
+      // Step 4: Update resolution
+      setCurrentResolution(newResolution);
+      
+      // Step 5: Disconnect and clean up
+      leaveRoom();
+      cleanupMedia();
+      
+      // Step 6: Wait a bit to ensure proper cleanup
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Step 7: Get new media stream with updated resolution
+      console.log('Getting new media stream...');
+      const newStream = await getMediaStream(newResolution);
+      
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = newStream;
+        console.log('Local video updated with new stream');
+      }
+      
+      // Step 8: Rejoin the room with saved ID and new stream
+      console.log('Rejoining room with new parameters...');
+      await joinRoom(newStream, savedRoomState?.roomId);
+      
+      console.log('Media reconfiguration complete!');
+    } catch (error) {
+      console.error('Error during media reconfiguration:', error);
+      alert('Failed to update media settings. Please try again.');
+    } finally {
+      // Step 9: Reset reconnection state
+      setIsReconnecting(false);
+    }
+  };
+
+  // Add this inside your component's main return statement, right before the final meeting room render
+  const renderReconnectingState = () => {
+    if (isReconnecting) {
+      return (
+        <div className="reconnecting-overlay">
+          <div className="reconnecting-dialog">
+            <div className="spinner"></div>
+            <h3>Updating Media Settings</h3>
+            <p>Please wait while we reconnect your call with new settings...</p>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // Modify the return statement to include the reconnecting overlay
   return (
     <>
       {renderInvitationModal()}
+      {renderReconnectingState()}
 
       {showConfigModal ? (
         <ConfigurationModal
@@ -411,9 +541,32 @@ export default function MediaRoom() {
         <div className="join-screen">
           <div className="join-container">
             <h1>Video Conference</h1>
+            
+            {/* Media access prompt/notice */}
+            <div className="media-access-notice">
+              <p>📹🎤 This application will request access to your camera and microphone when you join.</p>
+              <p>Please click "Allow" when prompted by your browser to enable video conferencing.</p>
+            </div>
+            
             <div className="join-preview">
               <video ref={localVideoRef} autoPlay muted playsInline />
+              <div className="media-error-overlay" id="mediaErrorMessage" style={{display: 'none'}}>
+                <p>Camera access error</p>
+                <button onClick={() => {
+                  document.getElementById('mediaErrorMessage')!.style.display = 'none';
+                  handleJoinRoom();
+                }}>
+                  Retry Camera Access
+                </button>
+              </div>
             </div>
+            
+            {/* Add device selection options */}
+            <div className="media-settings">
+              <p>Default settings: Medium quality (720p) with VP8 codec</p>
+              <p>You can change these settings after joining the meeting</p>
+            </div>
+            
             <div className="join-form">
               <input
                 type="text"
