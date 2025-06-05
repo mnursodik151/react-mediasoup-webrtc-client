@@ -93,6 +93,11 @@ export default function MediaRoom() {
     return { supported: true };
   };
 
+  // Add this effect to monitor resolution changes
+  useEffect(() => {
+    console.log(`Resolution state changed to: ${currentResolution}`);
+  }, [currentResolution]);
+
   // Handle joining a room
   const handleJoinRoom = async () => {
     if (!socket) {
@@ -112,10 +117,18 @@ export default function MediaRoom() {
       console.log('Requesting user media...');
       
       // Set default codec and resolution when getting first media stream
-      setPreferredCodec('vp8'); // Set default codec
-      setCurrentResolution('medium'); // Set default resolution
+      const initialCodec = 'vp8';
+      const initialResolution = 'medium';
       
-      const stream = await getMediaStream('medium').catch(error => {
+      console.log(`Setting initial resolution to ${initialResolution} and codec to ${initialCodec}`);
+      setPreferredCodec(initialCodec); 
+      setCurrentResolution(initialResolution);
+      
+      // Wait for state updates to propagate
+      await new Promise(resolve => setTimeout(resolve, 0));
+      
+      console.log(`Getting media stream with resolution: ${initialResolution}`);
+      const stream = await getMediaStream(initialResolution).catch(error => {
         console.error('Media access error:', error);
         
         // Handle permission denied errors specifically
@@ -151,7 +164,12 @@ export default function MediaRoom() {
             .getUserMedia({ audio: true, video: false })
             .catch(() => null);
             
-          await joinRoom(audioOnlyStream);
+          if (audioOnlyStream) {
+            await joinRoom(audioOnlyStream);
+          } else {
+            console.error('Failed to get audio stream');
+            alert('Could not access microphone. Join canceled.');
+          }
         } catch (fallbackError) {
           console.error('Failed to join with fallback options:', fallbackError);
           alert('Could not join meeting. Please check your device permissions and try again.');
@@ -328,7 +346,9 @@ export default function MediaRoom() {
           <select 
             value={currentResolution} 
             onChange={(e) => {
-              reconfigureMediaStream(e.target.value as 'low' | 'medium' | 'high', preferredCodec);
+              const newResolution = e.target.value as 'low' | 'medium' | 'high';
+              console.log(`User selected resolution: ${newResolution}`);
+              reconfigureMediaStream(newResolution, preferredCodec);
             }}
             disabled={isReconnecting}
           >
@@ -336,6 +356,7 @@ export default function MediaRoom() {
             <option value="medium">Medium (1280x720)</option>
             <option value="high">High (1920x1080)</option>
           </select>
+          <div className="current-setting">Current: {currentResolution}</div>
         </div>
         
         <div className="setting-group">
@@ -343,7 +364,9 @@ export default function MediaRoom() {
           <select 
             value={preferredCodec} 
             onChange={(e) => {
-              reconfigureMediaStream(currentResolution, e.target.value as 'vp8' | 'vp9' | 'h264' | 'h265');
+              const newCodec = e.target.value as 'vp8' | 'vp9' | 'h264' | 'h265';
+              console.log(`User selected codec: ${newCodec}`);
+              reconfigureMediaStream(currentResolution, newCodec);
             }}
             disabled={isReconnecting}
           >
@@ -352,6 +375,7 @@ export default function MediaRoom() {
             <option value="vp9">VP9 - Good Compression</option>
             <option value="vp8">VP8 - Best Compatibility</option>
           </select>
+          <div className="current-setting">Current: {preferredCodec}</div>
         </div>
       </div>
     );
@@ -453,41 +477,48 @@ export default function MediaRoom() {
     }
 
     try {
-      // Step 1: Save current room state
+      // Save current room state
       setSavedRoomState({
         roomId: roomId,
         peerId: peerId
       });
 
-      // Step 2: Show reconnection UI
+      // Show reconnection UI
       setIsReconnecting(true);
 
       console.log(`Reconfiguring media with resolution: ${newResolution}, codec: ${newCodec}`);
       
-      // Step 3: Update codec preference (this doesn't require reconnection but we'll do it anyway)
+      // Update codec and resolution
       setPreferredCodec(newCodec);
-      
-      // Step 4: Update resolution
       setCurrentResolution(newResolution);
       
-      // Step 5: Disconnect and clean up
+      // Wait for state updates to propagate
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Verify settings before proceeding
+      console.log(`Verified settings - Resolution: ${newResolution}, Codec: ${newCodec}`);
+      
+      // Disconnect and clean up
       leaveRoom();
       cleanupMedia();
       
-      // Step 6: Wait a bit to ensure proper cleanup
+      // Wait a bit to ensure proper cleanup
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Step 7: Get new media stream with updated resolution
-      console.log('Getting new media stream...');
+      // Get new media stream with explicit resolution parameter
+      console.log(`Getting new media stream with resolution: ${newResolution}`);
       const newStream = await getMediaStream(newResolution);
+      
+      console.log(`Media stream obtained with tracks:`, 
+        newStream.getTracks().map(t => `${t.kind} (${t.getSettings().width}x${t.getSettings().height})`));
       
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = newStream;
         console.log('Local video updated with new stream');
       }
       
-      // Step 8: Rejoin the room with saved ID and new stream
-      console.log('Rejoining room with new parameters...');
+      // Rejoin with new settings
+      console.log(`Rejoining room with resolution: ${newResolution}, codec: ${newCodec}`);
       await joinRoom(newStream, savedRoomState?.roomId);
       
       console.log('Media reconfiguration complete!');
@@ -495,7 +526,6 @@ export default function MediaRoom() {
       console.error('Error during media reconfiguration:', error);
       alert('Failed to update media settings. Please try again.');
     } finally {
-      // Step 9: Reset reconnection state
       setIsReconnecting(false);
     }
   };
