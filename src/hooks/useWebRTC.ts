@@ -2,6 +2,65 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import * as mediasoupClient from 'mediasoup-client';
 import { Socket } from 'socket.io-client';
 
+// Add platform detection
+const isReactNative = typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
+
+// Conditional imports for React Native
+let ReactNativeWebRTC: any = null;
+if (isReactNative) {
+  try {
+    // In React Native, we would use 'react-native-webrtc'
+    ReactNativeWebRTC = require('react-native-webrtc');
+  } catch (e) {
+    console.error('Failed to load react-native-webrtc:', e);
+  }
+}
+
+// Create platform-agnostic WebRTC utility functions
+const WebRTCUtils = {
+  // Cross-platform function to create a MediaStream
+  createMediaStream: (): MediaStream => {
+    if (isReactNative && ReactNativeWebRTC) {
+      return new ReactNativeWebRTC.MediaStream();
+    }
+    return new MediaStream();
+  },
+
+  // Cross-platform function to get media stats
+  getStats: async (pc: RTCPeerConnection): Promise<RTCStatsReport> => {
+    if (!pc) return new Map() as any;
+    
+    try {
+      return await pc.getStats();
+    } catch (e) {
+      console.error('Error getting stats:', e);
+      return new Map() as any;
+    }
+  },
+
+// Platform-specific logging for peer connections
+  logPeerConnection: (pc: RTCPeerConnection, description: string): void => {
+    console.log(`[WebRTC][${isReactNative ? 'RN' : 'Web'}] ${description} connection state:`, 
+      pc.connectionState || pc.iceConnectionState || 'unknown');
+  },
+  
+  // Log ICE server configurations
+  logIceServers: (servers: RTCIceServer[]): void => {
+    console.log(`[WebRTC][${isReactNative ? 'RN' : 'Web'}] ICE/TURN servers configured:`, 
+      servers.map(server => ({
+        urls: server.urls,
+        username: server.username ? '✓' : '✗',
+        credential: server.credential ? '✓' : '✗'
+      }))
+    );
+  }
+};
+
+// Helper function to log ICE server configurations
+const logIceServers = (servers: RTCIceServer[]): void => {
+  WebRTCUtils.logIceServers(servers);
+};
+
 export type PeerStream = {
   peerId: string;
   stream: MediaStream;
@@ -48,41 +107,51 @@ export const useWebRTC = (socket: Socket | null) => {
 
       // Only create transport if it doesn't exist
       if (!sendTransportRef.current && deviceRef.current) {
-        // Properly extract and use TURN servers from the options
+        // Create platform-specific transport options
         const transportOptions = {
           id: options.id,
           iceParameters: options.iceParameters,
           iceCandidates: options.iceCandidates,
           dtlsParameters: options.dtlsParameters,
           iceServers: options.turnServers,
-          // Add these configurations to encourage TURN usage
-          additionalIceParameters: {
-            iceLite: false, // Ensure full ICE implementation
-            iceControlling: true // Try to take control of ICE negotiation
-          }
+          // Use platform-specific settings for ICE 
+          ...(isReactNative ? {
+            // React Native WebRTC specific options
+            iceTransportPolicy: 'all' as RTCIceTransportPolicy, // React Native needs different settings
+          } : {
+            // Web browser specific options
+            additionalIceParameters: {
+              iceLite: false,
+              iceControlling: true
+            }
+          })
         };
         
-        console.log('Creating send transport with TURN servers:', options.turnServers);
+        console.log(`Creating send transport with TURN servers on ${isReactNative ? 'React Native' : 'Web'}:`, options.turnServers);
         const transport = deviceRef.current.createSendTransport(transportOptions);
         sendTransportRef.current = transport;
 
-        // Access the internal PeerConnection used by mediasoup-client
-        const handler = transport.handler as any;
-        if (handler && handler.pc) {
-          // This will initialize and start monitoring
-          const monitorInterval = monitorPeerConnection(handler.pc, 'Send Transport');
+        // Platform-specific PeerConnection monitoring
+        if (transport.handler) {
+          const handler = transport.handler as any;
+          const pc = handler.pc as RTCPeerConnection;
           
-          // Clean up the monitoring when the transport closes
-          transport.on('connectionstatechange', (state) => {
-            if (state === 'closed') {
-              clearInterval(monitorInterval);
-              // Remove stats when transport closes
-              if (connectionStatsRef.current['Send Transport']) {
-                delete connectionStatsRef.current['Send Transport'];
-                setConnectionStats({...connectionStatsRef.current});
+          if (pc) {
+            // Use platform-agnostic monitoring
+            const monitorInterval = monitorPeerConnection(pc, 'Send Transport');
+            
+            // Clean up the monitoring when the transport closes
+            transport.on('connectionstatechange', (state) => {
+              if (state === 'closed') {
+                clearInterval(monitorInterval);
+                // Remove stats when transport closes
+                if (connectionStatsRef.current['Send Transport']) {
+                  delete connectionStatsRef.current['Send Transport'];
+                  setConnectionStats({...connectionStatsRef.current});
+                }
               }
-            }
-          });
+            });
+          }
         }
         
         transport.on('connect', async ({ dtlsParameters }, callback) => {
@@ -522,7 +591,7 @@ export const useWebRTC = (socket: Socket | null) => {
 
   // Enhance the monitorPeerConnection function
   const monitorPeerConnection = (pc: RTCPeerConnection, description: string) => {
-    console.log(`[ICE] Monitoring connection: ${description}`);
+    console.log(`[ICE][${isReactNative ? 'RN' : 'Web'}] Monitoring connection: ${description}`);
 
     // Initialize stats for this connection if they don't exist
     if (!connectionStatsRef.current[description]) {
@@ -539,209 +608,60 @@ export const useWebRTC = (socket: Socket | null) => {
         tracks: {
           sending: [],
           receiving: []
-        }
+        },
+        platform: isReactNative ? 'react-native' : 'web'
       };
       // Initial update to trigger UI render
       setConnectionStats({...connectionStatsRef.current});
     }
 
-    // Log all ICE candidates
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        const candidateType = event.candidate.type || 'unknown';
-        
-        // Update candidate counter
-        if (!connectionStatsRef.current[description].candidates[candidateType]) {
-          connectionStatsRef.current[description].candidates[candidateType] = 0;
+    // Platform-specific ICE candidate handling
+    if (!isReactNative) {
+      // Web browser implementation
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          handleIceCandidate(event.candidate, description);
         }
-        connectionStatsRef.current[description].candidates[candidateType]++;
-        
-        // Update UI
-        setConnectionStats({...connectionStatsRef.current});
-        
-        // Log for debugging
-        console.log(`[ICE] ${description} candidate (${candidateType}): 
-          protocol: ${event.candidate.protocol}
-          address: ${event.candidate.address}
-          port: ${event.candidate.port}
-          relayProtocol: ${(event.candidate as any).relayProtocol || 'none'}
-          timestamp: ${new Date().toISOString()}
-        `);
-      }
-    };
-    
-    // Enhanced state tracking with timestamps
-    pc.oniceconnectionstatechange = () => {
-      console.log(`[ICE] ${description} connection state changed: ${pc.iceConnectionState} at ${new Date().toISOString()}`);
-      
-      // Update connection state in stats
-      if (connectionStatsRef.current[description]) {
-        connectionStatsRef.current[description].connectionState = pc.iceConnectionState;
-        setConnectionStats({...connectionStatsRef.current});
-      }
-      
-      if (pc.iceConnectionState === 'checking') {
-        console.log(`[ICE] Checking ICE candidates for ${description}`);
-      } else if (pc.iceConnectionState === 'failed') {
-        console.error(`[ICE] Connection failed for ${description}`);
-        
-        // Force ICE restart on failure (if supported)
-        try {
-          pc.restartIce?.();
-          console.log('[ICE] Attempted ICE restart');
-        } catch (e) {
-          console.warn('[ICE] ICE restart not supported or failed', e);
+      };
+    } else {
+      // React Native implementation
+      pc.addEventListener('icecandidate', (event: any) => {
+        if (event.candidate) {
+          handleIceCandidate(event.candidate, description);
         }
-      }
-    };
+      });
+    }
     
-    // Start monitoring data flow
+    // Start interval for monitoring data flow - same for both platforms
     return monitorDataFlow(pc, description);
   };
 
-  // Helper to get the selected candidate pair (works in Chrome)
-  const getSelectedCandidatePair = async (pc: RTCPeerConnection) => {
-    if (!pc.getStats) return null;
+  // Add a helper function for handling ICE candidates
+  const handleIceCandidate = (candidate: RTCIceCandidate, description: string) => {
+    const candidateType = candidate.type || 
+      (candidate.candidate && candidate.candidate.includes('typ relay') ? 'relay' : 
+       candidate.candidate && candidate.candidate.includes('typ srflx') ? 'srflx' : 'host');
     
-    try {
-      const stats = await pc.getStats();
-      let selectedPair: RTCIceCandidatePairStats | null = null;
-      
-      stats.forEach(report => {
-        if (report.type === 'candidate-pair' && report.selected) {
-          selectedPair = report as RTCIceCandidatePairStats;
-        }
-      });
-      
-      if (selectedPair) {
-        // Create a properly typed non-null reference
-        const nonNullPair = selectedPair as RTCIceCandidatePairStats & {
-          localCandidateId: string;
-          remoteCandidateId: string;
-        };
-        let localCandidate = null;
-        let remoteCandidate = null;
-        
-        stats.forEach(report => {
-          if (report.id === nonNullPair.localCandidateId) {
-            localCandidate = report;
-          }
-          if (report.id === nonNullPair.remoteCandidateId) {
-            remoteCandidate = report;
-          }
-        });
-        
-        return {
-          local: localCandidate,
-          remote: remoteCandidate,
-          pair: selectedPair
-        };
-      }
-      return null;
-    } catch (e) {
-      console.error('[ICE] Error getting stats:', e);
-      return null;
+    // Update candidate counter
+    if (!connectionStatsRef.current[description].candidates[candidateType]) {
+      connectionStatsRef.current[description].candidates[candidateType] = 0;
     }
+    connectionStatsRef.current[description].candidates[candidateType]++;
+    
+    // Update UI
+    setConnectionStats({...connectionStatsRef.current});
+    
+    // Log for debugging - make it work in both environments
+    console.log(`[ICE][${isReactNative ? 'RN' : 'Web'}] ${description} candidate (${candidateType}): 
+      protocol: ${candidate.protocol || 'unknown'}
+      address: ${candidate.address || 'unknown'}
+      port: ${candidate.port || 'unknown'}
+      relayProtocol: ${(candidate as any).relayProtocol || 'none'}
+      timestamp: ${new Date().toISOString()}
+    `);
   };
 
-  // Function to log TURN servers being used
-  const logIceServers = (servers: RTCIceServer[]) => {
-    console.log('[ICE] Configured ICE servers:');
-    if (!servers || !servers.length) {
-      console.warn('[ICE] No ICE servers provided!');
-      return;
-    }
-    
-    servers.forEach((server, i) => {
-      console.log(`[ICE] Server ${i+1}:`, {
-        urls: server.urls,
-        username: server.username ? '✓' : '✗',
-        credential: server.credential ? '✓' : '✗'
-      });
-    });
-  };
-
-  // Add this code to test your TURN server directly
-  // filepath: d:\Projects\io3-vsion-backends\sfu-web-client\src\hooks\useWebRTC.ts
-
-  // Add this function to your hook
-  const testTurnServer = useCallback((turnServer: RTCIceServer) => {
-    console.log('[ICE] Testing TURN server:', turnServer);
-    
-    const pc1 = new RTCPeerConnection({ iceServers: [turnServer] });
-    const pc2 = new RTCPeerConnection({ iceServers: [turnServer] });
-    
-    // Monitor both connections
-    monitorPeerConnection(pc1, 'TEST PC1');
-    monitorPeerConnection(pc2, 'TEST PC2');
-    
-    pc1.onicecandidate = e => e.candidate && pc2.addIceCandidate(e.candidate);
-    pc2.onicecandidate = e => e.candidate && pc1.addIceCandidate(e.candidate);
-    
-    // Create a data channel to trigger ICE connection
-    const dc = pc1.createDataChannel('test');
-    dc.onopen = () => console.log('[ICE] TEST CONNECTION SUCCEEDED - TURN server works!');
-    
-    // Create offer/answer to establish connection
-    pc1.createOffer()
-      .then(offer => pc1.setLocalDescription(offer))
-      .then(() => pc2.setRemoteDescription(pc1.localDescription!))
-      .then(() => pc2.createAnswer())
-      .then(answer => pc2.setLocalDescription(answer))
-      .then(() => pc1.setRemoteDescription(pc2.localDescription!))
-      .catch(err => console.error('[ICE] Test failed:', err));
-    
-    // Cleanup after 15 seconds
-    setTimeout(() => {
-      pc1.close();
-      pc2.close();
-    }, 15000);
-  }, []);
-
-  // Add this function to test TURN servers when needed
-  const setupTurnServerTest = useCallback(() => {
-    if (!socket) return;
-    
-    socket.once('transportCreated', async (options: any) => {
-      if (options.turnServers && options.turnServers.length) {
-        // Test each TURN server independently
-        options.turnServers.forEach(testTurnServer);
-      }
-    });
-  }, [socket, testTurnServer]);
-  
-  // You can call setupTurnServerTest() within joinRoom if you want to test TURN servers
-
-  // Add this function to test basic TURN server connectivity
-  const checkTurnServerAccess = async (turnServer: RTCIceServer): Promise<boolean> => {
-    try {
-      // Simple fetch test to see if server is reachable
-      // Extract server domain from URLs
-      const urls = Array.isArray(turnServer.urls) ? turnServer.urls[0] : turnServer.urls;
-      const serverUrl = urls.replace(/^(turn|stun)s?:\/\//, 'https://');
-      const domainOnly = serverUrl.split(':')[0];
-      
-      console.log(`[ICE] Testing basic connectivity to TURN server domain: ${domainOnly}`);
-      
-      // Just perform a HEAD request to see if server is online
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-      
-      const response = await fetch(`https://${domainOnly}/`, {
-        method: 'HEAD',
-        mode: 'no-cors',
-        signal: controller.signal
-      }).catch(() => null);
-      
-      clearTimeout(timeoutId);
-      return !!response;
-    } catch (err) {
-      console.warn('[ICE] TURN server domain connection test failed:', err);
-      return false;
-    }
-  };
-
-  // Add this function to monitor data flow
+  // Update monitorDataFlow to be platform-agnostic
   const monitorDataFlow = (pc: RTCPeerConnection, description: string) => {
     let lastBytesSent = 0;
     let lastBytesReceived = 0;
@@ -751,42 +671,60 @@ export const useWebRTC = (socket: Socket | null) => {
     const updateTrackInfo = () => {
       if (!connectionStatsRef.current[description]) return;
       
-      const senders = pc.getSenders().map(sender => ({
-        kind: sender.track?.kind || 'unknown',
-        enabled: sender.track?.enabled || false,
-        muted: sender.track?.muted || false
-      }));
-      
-      const receivers = pc.getReceivers().map(receiver => ({
-        kind: receiver.track?.kind || 'unknown',
-        enabled: receiver.track?.enabled || false,
-        muted: receiver.track?.muted || false
-      }));
-      
-      connectionStatsRef.current[description].tracks = {
-        sending: senders,
-        receiving: receivers
-      };
-      
-      setConnectionStats({...connectionStatsRef.current});
+      try {
+        const senders = pc.getSenders ? pc.getSenders().map(sender => ({
+          kind: sender.track?.kind || 'unknown',
+          enabled: sender.track?.enabled || false,
+          muted: sender.track?.muted || false
+        })) : [];
+        
+        const receivers = pc.getReceivers ? pc.getReceivers().map(receiver => ({
+          kind: receiver.track?.kind || 'unknown',
+          enabled: receiver.track?.enabled || false,
+          muted: receiver.track?.muted || false
+        })) : [];
+        
+        connectionStatsRef.current[description].tracks = {
+          sending: senders,
+          receiving: receivers
+        };
+        
+        setConnectionStats({...connectionStatsRef.current});
+      } catch (e) {
+        console.error('[Track] Error updating track info:', e);
+      }
     };
     
-    // Call initially and add track event listener
+    // Call initially and add track event listener in a platform-agnostic way
     updateTrackInfo();
-    pc.addEventListener('track', updateTrackInfo);
+    
+    // Handle track events in a platform-agnostic way
+    try {
+      if (!isReactNative) {
+        // Web browser implementation
+        pc.addEventListener('track', updateTrackInfo);
+      } else {
+        // React Native implementation
+        pc.ontrack = updateTrackInfo;
+      }
+    } catch (e) {
+      console.warn('Error setting track listener:', e);
+    }
     
     // Start interval for monitoring data flow
     const interval = setInterval(async () => {
-      if (!pc || pc.connectionState === 'closed') {
+      if (!pc || pc.connectionState === 'closed' || pc.iceConnectionState === 'closed') {
         clearInterval(interval);
         return;
       }
       
       try {
-        const stats = await pc.getStats();
+        // Use the platform-agnostic getStats method
+        const stats = await WebRTCUtils.getStats(pc);
         let totalBytesSent = 0;
         let totalBytesReceived = 0;
         
+        // Process stats in a platform-agnostic way
         stats.forEach(report => {
           if (report.type === 'outbound-rtp' && report.bytesSent) {
             totalBytesSent += report.bytesSent;
@@ -797,11 +735,11 @@ export const useWebRTC = (socket: Socket | null) => {
           }
         });
         
-        // Calculate bitrates
+        // Calculate bitrates (same for both platforms)
         const now = Date.now();
-        const duration = (now - lastTimestamp) / 1000; // seconds
-        const sendBitrate = ((totalBytesSent - lastBytesSent) * 8 / duration) / 1000; // kbps
-        const receiveBitrate = ((totalBytesReceived - lastBytesReceived) * 8 / duration) / 1000; // kbps
+        const duration = (now - lastTimestamp) / 1000;
+        const sendBitrate = ((totalBytesSent - lastBytesSent) * 8 / duration) / 1000;
+        const receiveBitrate = ((totalBytesReceived - lastBytesReceived) * 8 / duration) / 1000;
         
         // Update for next calculation
         lastBytesSent = totalBytesSent;
@@ -825,39 +763,38 @@ export const useWebRTC = (socket: Socket | null) => {
             setConnectionStats({...connectionStatsRef.current});
           }
         }
-        
       } catch (e) {
         console.error('[DATA] Error monitoring data flow:', e);
       }
-    }, 2000); // Check every 2 seconds
+    }, 2000);
     
     return interval;
   };
 
-  const monitorTrackStatus = (pc: RTCPeerConnection, description: string) => {
-    pc.getSenders().forEach(sender => {
-      if (sender.track) {
-        console.log(`[TRACK] ${description} Sending track: ${sender.track.kind}, enabled: ${sender.track.enabled}, muted: ${sender.track.muted}`);
-        
-        // Monitor track state changes
-        sender.track.onended = () => console.log(`[TRACK] ${description} Sending ${sender.track!.kind} track ended`);
-        sender.track.onmute = () => console.log(`[TRACK] ${description} Sending ${sender.track!.kind} track muted`);
-        sender.track.onunmute = () => console.log(`[TRACK] ${description} Sending ${sender.track!.kind} track unmuted`);
+  // Check browser/React Native compatibility in a platform-agnostic way
+  const checkMediaSupport = useCallback(() => {
+    if (isReactNative) {
+      // For React Native, check if we have loaded the WebRTC module
+      if (!ReactNativeWebRTC) {
+        return { 
+          supported: false, 
+          reason: "React Native WebRTC module not loaded. Make sure 'react-native-webrtc' is installed and linked properly."
+        };
       }
-    });
-    
-    pc.getReceivers().forEach(receiver => {
-      if (receiver.track) {
-        console.log(`[TRACK] ${description} Receiving track: ${receiver.track.kind}, enabled: ${receiver.track.enabled}, muted: ${receiver.track.muted}`);
-        
-        // Monitor track state changes
-        receiver.track.onended = () => console.log(`[TRACK] ${description} Receiving ${receiver.track!.kind} track ended`);
-        receiver.track.onmute = () => console.log(`[TRACK] ${description} Receiving ${receiver.track!.kind} track muted`);
-        receiver.track.onunmute = () => console.log(`[TRACK] ${description} Receiving ${receiver.track!.kind} track unmuted`);
+      return { supported: true };
+    } else {
+      // For web browsers
+      if (!navigator || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        return {
+          supported: false,
+          reason: "Your browser does not support media devices access. Please use a modern browser like Chrome, Firefox, or Edge."
+        };
       }
-    });
-  };
+      return { supported: true };
+    }
+  }, []);
 
+  // Add the platform check to the returned object
   return {
     roomId,
     setRoomId,
@@ -871,6 +808,8 @@ export const useWebRTC = (socket: Socket | null) => {
     cleanupRoomResources,
     preferredCodec,
     setPreferredCodec,
-    connectionStats
+    connectionStats,
+    isReactNative, // Export this so components can adapt their UI
+    checkMediaSupport // Export the platform check function
   };
 };
