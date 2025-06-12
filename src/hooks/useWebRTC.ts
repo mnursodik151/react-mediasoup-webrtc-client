@@ -361,7 +361,7 @@ export const useWebRTC = (socket: Socket | null) => {
                         setConnectionStats({...connectionStatsRef.current});
                       }
                     });
-                  }).catch(err => console.error('Error getting remote track stats:', err));
+                  }).catch((err: any) => console.error('Error getting remote track stats:', err));
                 }
               } catch (e) {
                 console.error('Error monitoring remote track resolution:', e);
@@ -413,8 +413,8 @@ export const useWebRTC = (socket: Socket | null) => {
     setActiveVideoId(prev => prev === peerId ? 'local' : prev);
   }, []);
 
-  // Update the joinRoom function to accept an explicit roomId parameter
-  const joinRoom = useCallback(async (localStream: MediaStream, explicitRoomId?: string) => {
+  // Update the joinRoom function to accept userId and explicit roomId parameters
+  const joinRoom = useCallback(async (localStream: MediaStream, explicitRoomId?: string, userId?: string) => {
     if (!socket) {
       console.error('Socket connection not established');
       return;
@@ -430,10 +430,10 @@ export const useWebRTC = (socket: Socket | null) => {
     }
 
     try {
-      // Generate peer ID as a local variable
-      const generatedPeerId = `peer-${Math.random().toString(36).substring(2, 15)}`;
+      // Use provided userId or generate a random peerId as fallback
+      const generatedPeerId = userId || `peer-${Math.random().toString(36).substring(2, 15)}`;
       setPeerId(generatedPeerId);
-      console.log('Generated Peer ID:', generatedPeerId);
+      console.log('Using Peer ID:', generatedPeerId);
 
       // If using an explicit room ID, make sure to update the state
       if (explicitRoomId && explicitRoomId !== roomId) {
@@ -905,13 +905,25 @@ export const useWebRTC = (socket: Socket | null) => {
   const getDebugInfo = useCallback(() => {
     const info: Record<string, any> = {};
     
-    // Get ICE and DTLS parameters
+    // Get transport connection information
     if (sendTransportRef.current) {
-      info.iceParameters = sendTransportRef.current.iceParameters || 'Not available';
-      info.dtlsParameters = sendTransportRef.current.dtlsParameters || 'Not available';
+      info.transportId = sendTransportRef.current.id || 'Not available';
+      info.transportConnectionState = sendTransportRef.current.connectionState || 'Not available';
+      
+      // Only attempt to get iceParameters if it's available through the API
+      try {
+        info.iceParameters = (sendTransportRef.current as any).iceParameters || 'Not available';
+      } catch (e) {
+        info.iceParameters = 'Not accessible';
+      }
+      
+      // Instead of accessing dtlsParameters directly, report connection state
+      info.dtlsState = sendTransportRef.current.connectionState;
     } else {
+      info.transportId = 'Send transport not created';
+      info.transportConnectionState = 'Not available';
       info.iceParameters = 'Send transport not created';
-      info.dtlsParameters = 'Send transport not created';
+      info.dtlsState = 'Send transport not created';
     }
     
     // Get local and remote track info
