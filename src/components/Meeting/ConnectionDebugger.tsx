@@ -6,6 +6,23 @@ interface ConnectionDebuggerProps {
   remotePeers: Array<{peerId: string; stream: MediaStream}>;
   roomId: string;
   peerId: string;
+  debugInfo?: {
+    iceParameters?: any;
+    dtlsParameters?: any;
+    localResolution?: {
+      width: number;
+      height: number;
+      frameRate: number;
+      codec: string;
+    };
+    remoteResolutions?: Record<string, {
+      width: number;
+      height: number;
+      frameRate: number;
+      codec: string;
+      trackId: string;
+    }>;
+  };
 }
 
 const ConnectionDebugger: React.FC<ConnectionDebuggerProps> = ({
@@ -13,7 +30,8 @@ const ConnectionDebugger: React.FC<ConnectionDebuggerProps> = ({
   mediasoupLoaded,
   remotePeers,
   roomId,
-  peerId
+  peerId,
+  debugInfo = {}
 }) => {
   const [expanded, setExpanded] = React.useState(false);
 
@@ -69,6 +87,59 @@ const ConnectionDebugger: React.FC<ConnectionDebuggerProps> = ({
                 </li>
               ))}
             </ul>
+            
+            {/* Add WebRTC Debug Information */}
+            {debugInfo && (
+              <>
+                <hr style={{border: '0.5px solid rgba(255,255,255,0.2)', margin: '10px 0'}} />
+                <h4 style={{margin: '5px 0', color: '#4CAF50'}}>WebRTC Debug Info</h4>
+                
+                {/* Local Resolution */}
+                {debugInfo.localResolution && (
+                  <div>
+                    <p><strong>Local Resolution:</strong></p>
+                    <div style={{marginLeft: '10px', fontSize: '11px'}}>
+                      <p>
+                        {debugInfo.localResolution.width}x{debugInfo.localResolution.height} 
+                        @ {debugInfo.localResolution.frameRate}fps 
+                        ({debugInfo.localResolution.codec})
+                      </p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Remote Resolutions */}
+                {debugInfo.remoteResolutions && Object.keys(debugInfo.remoteResolutions).length > 0 && (
+                  <div>
+                    <p><strong>Remote Resolutions:</strong></p>
+                    <div style={{marginLeft: '10px', fontSize: '11px'}}>
+                      {Object.entries(debugInfo.remoteResolutions).map(([peerId, resolution]) => (
+                        <p key={peerId}>
+                          Peer {peerId.substring(0, 8)}...: {resolution.width}x{resolution.height} 
+                          @ {resolution.frameRate}fps ({resolution.codec})
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Connection Parameters - Collapsible */}
+                <details style={{marginTop: '10px'}}>
+                  <summary style={{cursor: 'pointer', color: '#FFC107'}}>Connection Parameters</summary>
+                  <div style={{marginLeft: '10px', fontSize: '10px', overflowX: 'auto', whiteSpace: 'pre-wrap'}}>
+                    <p><strong>ICE Parameters:</strong></p>
+                    <pre style={{margin: '3px 0', background: 'rgba(0,0,0,0.3)', padding: '4px'}}>
+                      {JSON.stringify(debugInfo.iceParameters, null, 2)}
+                    </pre>
+                    
+                    <p><strong>DTLS Parameters:</strong></p>
+                    <pre style={{margin: '3px 0', background: 'rgba(0,0,0,0.3)', padding: '4px'}}>
+                      {JSON.stringify(debugInfo.dtlsParameters, null, 2)}
+                    </pre>
+                  </div>
+                </details>
+              </>
+            )}
           </div>
         </>
       )}

@@ -8,10 +8,10 @@ export const useMediaStream = () => {
   // Always use low resolution for bandwidth optimization
   const [currentResolution, setCurrentResolution] = useState<'low' | 'medium' | 'high'>('low');
 
-  const getMediaStream = async (resolution: 'low' | 'medium' | 'high' = 'low'): Promise<MediaStream> => {
+  const getMediaStream = async (resolution: 'low' | 'medium' | 'high' = 'medium'): Promise<MediaStream> => {
     try {
       // Always use low resolution regardless of input parameter (for bandwidth optimization)
-      const actualResolution = 'low';
+      const actualResolution = 'medium';
       setCurrentResolution(actualResolution);
       
       // Define resolution presets

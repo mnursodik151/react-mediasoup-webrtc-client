@@ -58,11 +58,13 @@ export const useWebRTC = (socket: Socket | null) => {
           // Add these configurations to encourage TURN usage
           additionalIceParameters: {
             iceLite: false, // Ensure full ICE implementation
-            iceControlling: true // Try to take control of ICE negotiation
+            iceControlling: true, // Try to take control of ICE negotiation
+            iceTransportPolicy: 'relay' as RTCIceTransportPolicy, // Force using relay candidates only
           }
         };
         
         console.log('Creating send transport with TURN servers:', options.turnServers);
+        console.log('Transport options:', transportOptions);
         const transport = deviceRef.current.createSendTransport(transportOptions);
         sendTransportRef.current = transport;
 
@@ -87,6 +89,8 @@ export const useWebRTC = (socket: Socket | null) => {
         
         transport.on('connect', async ({ dtlsParameters }, callback) => {
           console.log('Send transport connecting...');
+          console.log('DTLS parameters:', dtlsParameters);
+          // Emit the connectTransport event with the transport ID and DTLS parameters
           socket.emit(
             'connectTransport',
             {
@@ -162,9 +166,7 @@ export const useWebRTC = (socket: Socket | null) => {
       
       // Configure encodings for different bandwidth scenarios
       const encodings = [
-        { maxBitrate: 300000, scaleResolutionDownBy: 4 },
-        { maxBitrate: 900000, scaleResolutionDownBy: 2 },
-        { maxBitrate: 1500000, scaleResolutionDownBy: 1 }
+        { maxBitrate: 300000, scaleResolutionDownBy: 4 }
       ];
       
       try {
@@ -330,8 +332,49 @@ export const useWebRTC = (socket: Socket | null) => {
             peerStreams.current.set(data.peerId, stream);
             console.log('New MediaStream created for peer:', data.peerId);
           }
+          
+          // Add track to stream
           stream.addTrack(consumer.track);
           console.log('Track added to MediaStream for peer:', data.peerId);
+          
+          // Monitor remote track resolution if it's a video track
+          if (data.kind === 'video' && connectionStatsRef.current['TransportParams']) {
+            const trackId = consumer.track.id;
+            
+            // Function to update video resolution in stats
+            const updateRemoteTrackResolution = () => {
+              // We need to wait for the track to be attached to a video element to get resolution
+              // This will be called periodically after the track is added to the stream
+              try {
+                // Get resolution from stats API
+                if (transport.handler && (transport.handler as any).pc) {
+                  (transport.handler as any).pc.getStats(consumer.track).then((stats: any) => {
+                    stats.forEach((report: any) => {
+                      if (report.type === 'inbound-rtp' && report.kind === 'video' && report.frameWidth && report.frameHeight) {
+                        connectionStatsRef.current['TransportParams'].remoteResolutions[data.peerId] = {
+                          width: report.frameWidth,
+                          height: report.frameHeight,
+                          frameRate: report.framesPerSecond || 0,
+                          codec: report.codecId ? (stats.get(report.codecId)?.mimeType || 'unknown') : 'unknown',
+                          trackId
+                        };
+                        setConnectionStats({...connectionStatsRef.current});
+                      }
+                    });
+                  }).catch(err => console.error('Error getting remote track stats:', err));
+                }
+              } catch (e) {
+                console.error('Error monitoring remote track resolution:', e);
+              }
+            };
+            
+            // Start periodic monitoring
+            const resolutionInterval = setInterval(updateRemoteTrackResolution, 5000);
+            
+            // Clean up interval when consumer closes
+            consumer.on('transportclose', () => clearInterval(resolutionInterval));
+            consumer.on('trackended', () => clearInterval(resolutionInterval));
+          }
 
           setRemotePeers((prev) => {
             const exists = prev.find((p) => p.peerId === data.peerId);
@@ -858,6 +901,26 @@ export const useWebRTC = (socket: Socket | null) => {
     });
   };
 
+  // Add this function to get formatted debug info
+  const getDebugInfo = useCallback(() => {
+    const info: Record<string, any> = {};
+    
+    // Get ICE and DTLS parameters
+    if (sendTransportRef.current) {
+      info.iceParameters = sendTransportRef.current.iceParameters || 'Not available';
+      info.dtlsParameters = sendTransportRef.current.dtlsParameters || 'Not available';
+    } else {
+      info.iceParameters = 'Send transport not created';
+      info.dtlsParameters = 'Send transport not created';
+    }
+    
+    // Get local and remote track info
+    info.localResolution = connectionStatsRef.current?.['TransportParams']?.localResolution || 'Not available';
+    info.remoteResolutions = connectionStatsRef.current?.['TransportParams']?.remoteResolutions || {};
+    
+    return info;
+  }, []);
+
   return {
     roomId,
     setRoomId,
@@ -871,6 +934,7 @@ export const useWebRTC = (socket: Socket | null) => {
     cleanupRoomResources,
     preferredCodec,
     setPreferredCodec,
-    connectionStats
+    connectionStats,
+    getDebugInfo // Add the new function to the returned object
   };
 };

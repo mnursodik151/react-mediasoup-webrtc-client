@@ -100,3 +100,41 @@
   border-radius: 3px;
   margin-bottom: 2px;
 }
+
+/* New styles for advanced debug info */
+.debug-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.2);
+}
+
+.debug-section summary {
+  cursor: pointer;
+  color: #42a5f5;
+  font-weight: 500;
+  margin-bottom: 5px;
+}
+
+.resolution-info {
+  background: rgba(70, 70, 70, 0.5);
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  font-family: monospace;
+}
+
+.resolution-info .codec {
+  color: #81c784;
+  font-size: 10px;
+}
+
+.parameter-display {
+  max-height: 150px;
+  overflow: auto;
+  background: rgba(30, 30, 30, 0.8);
+  padding: 5px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 10px;
+  line-height: 1.3;
+}
