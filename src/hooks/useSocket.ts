@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import io, { Socket } from 'socket.io-client';
 
-export const useSocket = () => {
+export const useSocket = (namespace = '/mediasoup') => { // Default to mediasoup namespace
   const [socket, setSocket] = useState<Socket | null>(null);
   const [wsIP, setWsIP] = useState<string>(localStorage.getItem('wsIP') || '192.168.1.240:9006');
   const [userId, setUserId] = useState<string>(localStorage.getItem('userId') || '');
@@ -19,7 +19,7 @@ export const useSocket = () => {
   const initializeSocket = useCallback(() => {
     // Prevent duplicate initialization
     if (initializingRef.current) {
-      console.log('Socket initialization already in progress, skipping. If you want to force reconnection, disconnect first.');
+      console.log(`Socket initialization for ${namespace} already in progress, skipping.`);
       return null;
     }
     
@@ -34,7 +34,7 @@ export const useSocket = () => {
     try {
       // Check if we already have a socket connection
       if (socket) {
-        console.log('Closing existing socket connection before creating new one');
+        console.log(`Closing existing socket connection for ${namespace} before creating new one`);
         socket.disconnect();
       }
       
@@ -43,59 +43,70 @@ export const useSocket = () => {
       localStorage.setItem('userId', userId);
       
       // Format the WebSocket URL correctly
-      const wsUrl = wsIP.startsWith('http') || wsIP.startsWith('ws') 
+      let wsUrl = wsIP.startsWith('http') || wsIP.startsWith('ws') 
         ? wsIP 
         : `wss://${wsIP}`;
+        
+      // Append namespace if not already part of the URL
+      if (!wsUrl.endsWith(namespace)) {
+        wsUrl = `${wsUrl}${namespace}`;
+      }
       
       console.log(`Initializing socket connection to ${wsUrl} with userId: ${userId}`);
       
       const newSocket = io(wsUrl, {
-        query: { userId }
+        query: { userId },
+        path: '/socket.io', // default path - may need to be configurable
+        forceNew: true, // Create a new connection for each namespace
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
       });
       
       // Setup socket connection handlers
       newSocket.on('connect', () => {
-        console.log('Socket connected successfully');
+        console.log(`Socket connected successfully to namespace ${namespace}`);
         // Reset initialization flag once connected
         initializingRef.current = false;
       });
       
       newSocket.on('disconnect', (reason: string) => {
-        console.log('Socket disconnected:', reason);
+        console.log(`Socket disconnected from namespace ${namespace}:`, reason);
         // Reset initialization flag on disconnect
         initializingRef.current = false;
       });
       
       newSocket.on('error', (error: Error) => {
-        console.error('Socket error:', error);
-        alert('Connection error. Please try again later.');
+        console.error(`Socket error on namespace ${namespace}:`, error);
+        alert(`Connection error on ${namespace}. Please try again later.`);
         // Reset initialization flag on error
         initializingRef.current = false;
       });
 
-      // Add invitation listener
-      newSocket.on('invitedToRoom', (invitation: { roomId: string; peerId: string; inviterId: string }) => {
-        console.log('Received room invitation:', invitation);
-        setIncomingInvitation(invitation);
-        setShowInvitationModal(true);
-      });
+      // Add invitation listener (specific to WebRTC)
+      if (namespace === '/mediasoup') {
+        newSocket.on('invitedToRoom', (invitation: { roomId: string; peerId: string; inviterId: string }) => {
+          console.log('Received room invitation:', invitation);
+          setIncomingInvitation(invitation);
+          setShowInvitationModal(true);
+        });
+      }
       
       setSocket(newSocket);
       setShowConfigModal(false);
       
       return newSocket;
     } catch (error) {
-      console.error('Error initializing socket:', error);
+      console.error(`Error initializing socket for namespace ${namespace}:`, error);
       // Reset initialization flag on error
       initializingRef.current = false;
       return null;
     }
-  }, [wsIP, userId, socket]); // Add socket to dependencies
+  }, [wsIP, userId, socket, namespace]); // Added namespace to dependencies
 
   // Update disconnectSocket function to reset the initializingRef flag
   const disconnectSocket = useCallback(() => {
     if (socket) {
-      console.log('Manually disconnecting socket connection');
+      console.log(`Manually disconnecting socket connection from namespace ${namespace}`);
       socket.disconnect();
       setSocket(null);
       
@@ -107,7 +118,7 @@ export const useSocket = () => {
       return true;
     }
     return false;
-  }, [socket]);
+  }, [socket, namespace]);
 
   const handleConfigSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -126,21 +137,21 @@ export const useSocket = () => {
     initializingRef.current = false;
     console.log('Reset initialization flag before socket reconnection attempt');
     
-    console.log('Configuration submitted, initializing socket...');
+    console.log(`Configuration submitted, initializing socket for namespace ${namespace}...`);
     initializeSocket();
-  }, [wsIP, userId, initializeSocket]);
+  }, [wsIP, userId, initializeSocket, namespace]);
 
   // Only initialize socket once on component mount if credentials are available
   useEffect(() => {
-    console.log('Component mounted, checking if socket should auto-initialize');
+    console.log(`Component mounted, checking if socket for namespace ${namespace} should auto-initialize`);
     if (wsIP && userId && !socket && !initializingRef.current) {
-      console.log('Auto-initializing socket from stored credentials');
+      console.log(`Auto-initializing socket for namespace ${namespace} from stored credentials`);
       const newSocket = initializeSocket();
       if (newSocket) {
-        console.log('Socket auto-initialized successfully');
+        console.log(`Socket auto-initialized successfully for namespace ${namespace}`);
       }
     }
-  }, []); // Empty dependency array for initialization only on mount
+  }, [namespace, wsIP, userId, socket, initializeSocket]); // Added all dependencies
 
   // Add or ensure this function exists in the hook
   const sendInvites = useCallback((roomId: string, peerId: string, inviteeIds: string[]) => {
@@ -171,6 +182,7 @@ export const useSocket = () => {
     setShowInvitationModal,
     setIncomingInvitation,
     sendInvites,
-    disconnectSocket,  // Add this to the return value
+    disconnectSocket,
+    namespace,
   };
 };

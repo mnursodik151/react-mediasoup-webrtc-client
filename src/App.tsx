@@ -1,12 +1,13 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
-import { BrowserRouter as Router, Route, Routes, Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import WebRTCPage from './pages/WebRTCPage';
+import ChatPage from './pages/ChatPage';
+import reactLogo from './assets/react.svg';
+import viteLogo from '/vite.svg';
+import './App.css';
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [count, setCount] = useState(0);
 
   return (
     <Router>
@@ -20,13 +21,19 @@ function App() {
           </a>
         </div>
         <h1>Vite + React</h1>
-        <nav style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
-          <Link to="/" style={{ textDecoration: 'none', color: 'blue', fontWeight: 'bold' }}>
-            🏠 Home
-          </Link>
-          <Link to="/webrtc" style={{ textDecoration: 'none', color: 'purple', fontWeight: 'bold' }}>
-            📹 WebRTC Page
-          </Link>
+        <nav className="main-navigation" style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+          <ul style={{ listStyleType: 'none', padding: 0, margin: 0, display: 'flex', gap: '1rem' }}>
+            <li>
+              <Link to="/video" style={{ textDecoration: 'none', color: 'blue', fontWeight: 'bold' }}>
+                🏠 Video Conference
+              </Link>
+            </li>
+            <li>
+              <Link to="/chat" style={{ textDecoration: 'none', color: 'purple', fontWeight: 'bold' }}>
+                💬 Chat
+              </Link>
+            </li>
+          </ul>
         </nav>
         <div className="card">
           <button onClick={() => setCount((count) => count + 1)}>
@@ -40,11 +47,13 @@ function App() {
           Click on the Vite and React logos to learn more
         </p>
         <Routes>
-          <Route path="/webrtc" element={<WebRTCPage />} />
+          <Route path="/video" element={<WebRTCPage />} />
+          <Route path="/chat" element={<ChatPage />} />
+          <Route path="/" element={<WebRTCPage />} />
         </Routes>
       </>
     </Router>
-  )
+  );
 }
 
-export default App
+export default App;
