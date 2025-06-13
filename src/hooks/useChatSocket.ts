@@ -83,6 +83,29 @@ export const useChatSocket = () => {
     socket.emit('joinRoom', { roomName });
   }, [socket]);
 
+  // Add the joinChatRoom function to match the backend handler
+  const joinChatRoom = useCallback((meetingId: string) => {
+    if (!socket) {
+      console.error('Cannot join chat room: Socket not connected');
+      return;
+    }
+    
+    console.log(`Emitting joinChatRoom event for meeting: ${meetingId}`);
+    socket.emit('joinChatRoom', { meetingId });
+    
+    // Listen for successful join response if needed
+    socket.once('joinedChatRoom', (response: { meetingId: string, success: boolean }) => {
+      if (response.success) {
+        console.log(`Successfully joined chat room for meeting: ${response.meetingId}`);
+        setCurrentRoom(response.meetingId);
+        // Clear previous messages when joining a new room
+        setMessages([]);
+      } else {
+        console.error(`Failed to join chat room for meeting: ${response.meetingId}`);
+      }
+    });
+  }, [socket]);
+
   return {
     // Base socket properties
     socket,
@@ -100,6 +123,7 @@ export const useChatSocket = () => {
     currentRoom,
     onlineUsers,
     sendMessage,
-    joinRoom,
+    joinRoom, // Keep existing method for backward compatibility
+    joinChatRoom, // Add new method that matches backend signature
   };
 };

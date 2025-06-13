@@ -18,11 +18,12 @@ const ChatPage: React.FC = () => {
     currentRoom,
     onlineUsers,
     sendMessage,
-    joinRoom
+    joinChatRoom, // Use the new function that matches the backend signature
   } = useChatSocket();
 
   const [messageInput, setMessageInput] = useState<string>('');
-  const [availableRooms] = useState<string[]>(['general', 'support', 'random']);
+  // Use meetingIds instead of room names to match backend expectation
+  const [availableMeetings] = useState<string[]>(['general-meeting', 'support-meeting', 'team-meeting']);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Scroll to bottom of messages when messages change
@@ -32,12 +33,12 @@ const ChatPage: React.FC = () => {
     }
   }, [messages]);
 
-  // Join default room when socket connects
+  // Join default meeting when socket connects
   useEffect(() => {
     if (socket) {
-      joinRoom('general');
+      joinChatRoom('general-meeting');
     }
-  }, [socket, joinRoom]);
+  }, [socket, joinChatRoom]);
 
   const handleSubmitMessage = (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,8 +48,8 @@ const ChatPage: React.FC = () => {
     setMessageInput('');
   };
 
-  const handleRoomChange = (roomName: string) => {
-    joinRoom(roomName);
+  const handleMeetingChange = (meetingId: string) => {
+    joinChatRoom(meetingId);
   };
 
   if (showConfigModal) {
@@ -79,7 +80,7 @@ const ChatPage: React.FC = () => {
       <header className="chat-header">
         <h1>Real-Time Chat</h1>
         <div className="current-room">
-          Room: {currentRoom}
+          Meeting: {currentRoom || 'Not connected'}
         </div>
         <button 
           onClick={() => setShowConfigModal(true)}
@@ -92,15 +93,15 @@ const ChatPage: React.FC = () => {
       <div className="chat-layout">
         <aside className="chat-sidebar">
           <div className="room-list">
-            <h3>Chat Rooms</h3>
+            <h3>Chat Meetings</h3>
             <ul>
-              {availableRooms.map(room => (
+              {availableMeetings.map(meetingId => (
                 <li 
-                  key={room}
-                  className={room === currentRoom ? 'active' : ''}
-                  onClick={() => handleRoomChange(room)}
+                  key={meetingId}
+                  className={meetingId === currentRoom ? 'active' : ''}
+                  onClick={() => handleMeetingChange(meetingId)}
                 >
-                  #{room}
+                  #{meetingId}
                 </li>
               ))}
             </ul>
