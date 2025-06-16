@@ -40,3 +40,38 @@
 .read-the-docs {
   color: #888;
 }
+
+.main-navigation {
+  background-color: #202124;
+  padding: 10px 20px;
+}
+
+.main-navigation ul {
+  list-style-type: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 20px;
+}
+
+.main-navigation li a {
+  color: white;
+  text-decoration: none;
+  padding: 8px 15px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.main-navigation li a:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.app-container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-container > *:not(.main-navigation) {
+  flex: 1;
+}
