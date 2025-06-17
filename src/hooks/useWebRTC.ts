@@ -727,6 +727,9 @@ export const useWebRTC = (socket: Socket | null) => {
       socket.off('leftRoom');
     }
 
+    consumePeersEmittedRef.current = false; // Reset consumePeersEmitted flag
+    console.log('All room resources cleaned up');
+
     // Reset UI state
     setIsJoined(false);
     setRemotePeers([]);
