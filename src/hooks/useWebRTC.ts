@@ -437,6 +437,7 @@ export const useWebRTC = (socket: Socket | null) => {
           transportId: transport.id,
           rtpCapabilities: deviceRef.current!.rtpCapabilities,
           kind: data.kind,
+          peerId: data.peerId,
           // ...additionalOptions // Add the audio-specific options
         });
 
