@@ -327,7 +327,7 @@ export const useWebRTC = (socket: Socket | null) => {
     console.log(`Creating receive transport for ${data.kind} from peer ${data.peerId}...`);
 
     // Create a unique event name for this specific consumer to avoid conflicts
-    const transportEventName = `transportCreated_recv_${data.kind}}`;
+    const transportEventName = `transportCreated_recv_${data.kind}`;
     console.log(`Using unique transport event name: ${transportEventName}`);
     
     // Remove any existing handlers for these events
