@@ -49,6 +49,7 @@ export const useWebRTC = (socket: Socket | null) => {
     socket.off(transportCreatedEventName);
 
     // Use once instead of on to ensure the handler only executes once
+    console.log(`listening for ${mediaType} transport creation event:`, transportCreatedEventName);
     socket.once(transportCreatedEventName, async (options: any) => {
       console.log(`${mediaType} transport options received:`, options);
 
