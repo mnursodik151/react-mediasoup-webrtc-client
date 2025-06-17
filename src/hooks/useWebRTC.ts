@@ -43,7 +43,7 @@ export const useWebRTC = (socket: Socket | null) => {
     console.log(`Creating ${mediaType} send transport...`);
 
     // Create a unique event handler for this media type
-    const transportCreatedEventName = `transportCreated_${mediaType}`;
+    const transportCreatedEventName = `transportCreated_send_${mediaType}`;
     
     // Remove any existing handlers for this event before adding new ones
     socket.off(transportCreatedEventName);
@@ -282,7 +282,7 @@ export const useWebRTC = (socket: Socket | null) => {
     socket.off('transportCreated_recv');
     socket.off('readyToConsume');
 
-    socket.once('transportCreated_recv', async (options: any) => {
+    socket.once(`transportCreated_recv_${data.kind}`, async (options: any) => {
       console.log('Receive transport options received:', options);
       
       // Check if turnServers are properly configured
