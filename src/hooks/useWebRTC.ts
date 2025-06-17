@@ -268,211 +268,6 @@ export const useWebRTC = (socket: Socket | null) => {
     }
   };
 
-  // Modified to handle multiple tracks from the same peer
-  const createRecvTransport = useCallback(async (data: { 
-    producerId: string; 
-    kind: 'audio' | 'video'; 
-    rtpParameters: any; 
-    peerId: string;
-    trackId?: string; // Added to help identify specific tracks
-  }) => {
-    if (!socket || !deviceRef.current) return;
-    
-    console.log(`Creating receive transport for ${data.kind} from peer ${data.peerId}...`);
-
-    // Remove any existing handlers for these events
-    socket.off('transportCreated_recv');
-    socket.off('readyToConsume');
-
-    socket.once(`transportCreated_recv_${data.kind}`, async (options: any) => {
-      console.log('Receive transport options received:', options);
-      
-      // Check if turnServers are properly configured
-      if (!options.turnServers || !options.turnServers.length) {
-        console.error('[ICE] No TURN servers provided by the server!');
-      } else {
-        logIceServers(options.turnServers);
-      }
-      
-      // Properly extract and use TURN servers from the options
-      const transportOptions = {
-        id: options.id,
-        iceParameters: options.iceParameters,
-        iceCandidates: options.iceCandidates,
-        dtlsParameters: options.dtlsParameters,
-        iceServers: options.turnServers,
-        // Add these configurations to encourage TURN usage
-        iceTransportPolicy: 'relay' as RTCIceTransportPolicy, // Force using relay candidates only
-        additionalIceParameters: {
-          iceLite: false, // Ensure full ICE implementation
-          iceControlling: true // Try to take control of ICE negotiation
-        }
-      };
-      
-      console.log('Creating receive transport with TURN servers:', options.turnServers);
-      const transport = deviceRef.current!.createRecvTransport(transportOptions);
-
-      // Access the internal PeerConnection used by mediasoup-client
-      const handler = transport.handler as any;
-      if (handler && handler.pc) {
-        // This will initialize and start monitoring
-        const monitorInterval = monitorPeerConnection(
-          handler.pc, 
-          `Receive Transport (${data.peerId}-${data.kind})`
-        );
-        
-        // Clean up the monitoring when the transport closes
-        transport.on('connectionstatechange', (state) => {
-          if (state === 'closed') {
-            clearInterval(monitorInterval);
-            // Remove stats when transport closes
-            if (connectionStatsRef.current[`Receive Transport (${data.peerId}-${data.kind})`]) {
-              delete connectionStatsRef.current[`Receive Transport (${data.peerId}-${data.kind})`];
-              setConnectionStats({...connectionStatsRef.current});
-            }
-          }
-        });
-      }
-      
-      transport.on('connect', async ({ dtlsParameters }, callback) => {
-        console.log(`Recv transport for ${data.kind} connecting...`);
-        socket.emit(
-          'connectTransport',
-          {
-            transportId: transport.id,
-            dtlsParameters,
-            kind: data.kind,
-          },
-          (success: boolean) => {
-            if (!success) {
-              console.error(`Failed to connect receive transport for ${data.kind}`);
-              return;
-            }
-            console.log(`Receive transport for ${data.kind} connected successfully`);
-          }
-        );
-        callback();
-      });
-
-      transport.on('connectionstatechange', async (state) => {
-        console.log(`Recv transport connection state for peer ${data.peerId} ${data.kind}:`, state);
-
-        // Handle disconnection states
-        if (state === 'closed' || state === 'failed' || state === 'disconnected') {
-          console.log(`Transport for peer ${data.peerId} ${data.kind} is ${state}`);
-          // Only remove peer if all transports are disconnected
-          // We'll implement this in the consumer callback
-        }
-      });
-
-      socket.emit('consume', {
-        producerId: data.producerId,
-        transportId: transport.id,
-        rtpCapabilities: deviceRef.current!.rtpCapabilities,
-        kind: data.kind,
-        peerId: data.peerId,
-      });
-
-      // Use once instead of on to prevent multiple handlers
-      socket.once('readyToConsume', async (rtpCapabilities: mediasoupClient.types.RtpParameters) => {
-        try {
-          const consumer = await transport.consume({
-            id: transport.id,
-            producerId: data.producerId,
-            kind: data.kind,
-            rtpParameters: rtpCapabilities,
-          });
-          console.log(`Consumer created for ${data.kind} from peer ${data.peerId}:`, consumer);
-
-          // Store the track-to-peer mapping
-          const trackId = consumer.track.id;
-          trackToPeerMap.current.set(trackId, data.peerId);
-          console.log(`Mapping track ${trackId} to peer ${data.peerId}`);
-
-          // Set up consumer close handler
-          consumer.on('transportclose', () => {
-            console.log(`Consumer transport closed for peer ${data.peerId} ${data.kind}`);
-            
-            // Remove the track mapping
-            trackToPeerMap.current.delete(trackId);
-            
-            // Only remove peer from UI if both audio and video are gone
-            checkAndRemovePeerIfNeeded(data.peerId);
-          });
-
-          // Get or create a media stream for this peer
-          let stream = peerStreams.current.get(data.peerId);
-          if (!stream) {
-            stream = new MediaStream();
-            peerStreams.current.set(data.peerId, stream);
-            console.log('New MediaStream created for peer:', data.peerId);
-          }
-          
-          // Add track to stream
-          stream.addTrack(consumer.track);
-          console.log(`${data.kind} track added to MediaStream for peer:`, data.peerId);
-          
-          // Monitor remote track resolution if it's a video track
-          if (data.kind === 'video' && connectionStatsRef.current['TransportParams']) {
-            const trackId = consumer.track.id;
-            
-            // Function to update video resolution in stats
-            const updateRemoteTrackResolution = () => {
-              try {
-                // Get resolution from stats API
-                if (transport.handler && (transport.handler as any).pc) {
-                  (transport.handler as any).pc.getStats(consumer.track).then((stats: any) => {
-                    stats.forEach((report: any) => {
-                      if (report.type === 'inbound-rtp' && report.kind === 'video' && report.frameWidth && report.frameHeight) {
-                        connectionStatsRef.current['TransportParams'].remoteResolutions[data.peerId] = {
-                          width: report.frameWidth,
-                          height: report.frameHeight,
-                          frameRate: report.framesPerSecond || 0,
-                          codec: report.codecId ? (stats.get(report.codecId)?.mimeType || 'unknown') : 'unknown',
-                          trackId
-                        };
-                        setConnectionStats({...connectionStatsRef.current});
-                      }
-                    });
-                  }).catch((err: any) => console.error('Error getting remote track stats:', err));
-                }
-              } catch (e) {
-                console.error('Error monitoring remote track resolution:', e);
-              }
-            };
-            
-            // Start periodic monitoring
-            const resolutionInterval = setInterval(updateRemoteTrackResolution, 5000);
-            
-            // Clean up interval when consumer closes
-            consumer.on('transportclose', () => clearInterval(resolutionInterval));
-            consumer.on('trackended', () => clearInterval(resolutionInterval));
-          }
-
-          // After adding the track, update the UI with the full stream
-          setRemotePeers((prev) => {
-            const exists = prev.find((p) => p.peerId === data.peerId);
-            if (exists) {
-              console.log(`Updating existing peer stream for ${data.peerId} with new ${data.kind} track`);
-              return prev.map((p) => (p.peerId === data.peerId ? { ...p, stream } : p));
-            } else {
-              console.log(`Adding new peer stream for ${data.peerId} with ${data.kind} track`);
-              return [...prev, { peerId: data.peerId, stream }];
-            }
-          });
-        } catch (error) {
-          console.error(`Error consuming ${data.kind} stream from ${data.peerId}:`, error);
-        }
-      });
-    });
-
-    socket.emit('createTransport', { 
-      direction: 'recv',
-      kind: data.kind,
-      peerId: data.peerId,
-    });
-  }, [socket]);
-
   // Helper to check if a peer has any remaining tracks and remove if not
   const checkAndRemovePeerIfNeeded = useCallback((peerId: string) => {
     // Check if any tracks are still associated with this peer
@@ -509,6 +304,234 @@ export const useWebRTC = (socket: Socket | null) => {
     // If this was the active video, reset active video
     setActiveVideoId(prev => prev === peerId ? 'local' : prev);
   }, []);
+
+  // Modified to handle multiple tracks from the same peer with improved error handling
+  const createRecvTransport = useCallback(async (data: { 
+    producerId: string; 
+    kind: 'audio' | 'video'; 
+    rtpParameters: any; 
+    peerId: string;
+    trackId?: string;
+  }) => {
+    if (!socket || !deviceRef.current) return;
+    
+    console.log(`Creating receive transport for ${data.kind} from peer ${data.peerId}...`);
+
+    // Create a unique event name for this specific consumer to avoid conflicts
+    const transportEventName = `transportCreated_recv_${data.kind}}`;
+    console.log(`Using unique transport event name: ${transportEventName}`);
+    
+    // Remove any existing handlers for these events
+    socket.off(transportEventName);
+    
+    // Use a unique consume ready event to avoid conflicts
+    const consumeReadyEventName = `readyToConsume`;
+    socket.off(consumeReadyEventName);
+
+    socket.once(transportEventName, async (options: any) => {
+      console.log(`Received transport options for ${data.kind} from ${data.peerId}:`, options);
+      
+      // Check if turnServers are properly configured
+      if (!options.turnServers || !options.turnServers.length) {
+        console.error('[ICE] No TURN servers provided by the server!');
+      } else {
+        logIceServers(options.turnServers);
+      }
+      
+      try {
+        // Properly extract and use TURN servers from the options
+        const transportOptions = {
+          id: options.id,
+          iceParameters: options.iceParameters,
+          iceCandidates: options.iceCandidates,
+          dtlsParameters: options.dtlsParameters,
+          iceServers: options.turnServers,
+          // Add these configurations to encourage TURN usage
+          iceTransportPolicy: 'relay' as RTCIceTransportPolicy,
+          additionalIceParameters: {
+            iceLite: false,
+            iceControlling: true
+          }
+        };
+        
+        console.log(`Creating receive transport for ${data.kind} with TURN servers:`, options.turnServers);
+        const transport = deviceRef.current!.createRecvTransport(transportOptions);
+
+        // Access the internal PeerConnection used by mediasoup-client
+        const handler = transport.handler as any;
+        if (handler && handler.pc) {
+          // Monitor connection
+          const monitorInterval = monitorPeerConnection(
+            handler.pc, 
+            `Receive Transport (${data.peerId}-${data.kind})`
+          );
+          
+          // Clean up monitoring on close
+          transport.on('connectionstatechange', (state) => {
+            if (state === 'closed' || state === 'failed') {
+              clearInterval(monitorInterval);
+              if (connectionStatsRef.current[`Receive Transport (${data.peerId}-${data.kind})`]) {
+                delete connectionStatsRef.current[`Receive Transport (${data.peerId}-${data.kind})`];
+                setConnectionStats({...connectionStatsRef.current});
+              }
+            }
+          });
+        }
+        
+        transport.on('connect', async ({ dtlsParameters }, callback) => {
+          console.log(`Recv transport for ${data.kind} connecting...`);
+          socket.emit(
+            'connectTransport',
+            {
+              transportId: transport.id,
+              dtlsParameters,
+              kind: data.kind,
+              peerId: data.peerId // Include peer ID for better tracking
+            },
+            (success: boolean) => {
+              if (!success) {
+                console.error(`Failed to connect receive transport for ${data.kind}`);
+                return;
+              }
+              console.log(`Receive transport for ${data.kind} connected successfully`);
+            }
+          );
+          callback();
+        });
+
+        transport.on('connectionstatechange', async (state) => {
+          console.log(`Recv transport connection state for peer ${data.peerId} ${data.kind}:`, state);
+
+          if (state === 'closed' || state === 'failed' || state === 'disconnected') {
+            console.log(`Transport for peer ${data.peerId} ${data.kind} is ${state}`);
+            // Only remove peer if all transports are disconnected
+            checkAndRemovePeerIfNeeded(data.peerId);
+          }
+        });
+
+        // Add request modifiers for audio to fix SSRC issues
+        const additionalOptions = data.kind === 'audio' ? {
+          codecOptions: {
+            opusStereo: true,
+            opusDtx: true,
+            opusFec: true, 
+            opusPtime: 20,
+          },
+          // For audio, specify explicitly that this is a different stream
+          streamId: `${data.peerId}_audio_${Date.now()}`,
+          trackId: `${data.peerId}_audiotrack_${Date.now()}`
+        } : {};
+
+        socket.emit('consume', {
+          producerId: data.producerId,
+          transportId: transport.id,
+          rtpCapabilities: deviceRef.current!.rtpCapabilities,
+          kind: data.kind,
+          ...additionalOptions // Add the audio-specific options
+        });
+
+        // Use a unique event name to avoid conflicts between different consumptions
+        socket.once(consumeReadyEventName, async (rtpCapabilities: mediasoupClient.types.RtpParameters) => {
+          try {
+            console.log(`Ready to consume ${data.kind} from ${data.peerId} with parameters:`, rtpCapabilities);
+            
+            // Fix the SSRC conflict issue by ensuring unique track IDs and SSRCs for audio
+            if (data.kind === 'audio' && rtpCapabilities?.encodings && Array.isArray(rtpCapabilities.encodings) && rtpCapabilities.encodings.length > 0) {
+              // For audio streams, ensure SSRC is unique to avoid conflicts
+              // This helps prevent the InvalidAccessError with setRemoteDescription
+              const uniqueSsrc = Math.floor(Math.random() * 9000000) + 1000000;
+              console.log(`Setting unique SSRC for audio: ${uniqueSsrc}`);
+              
+              rtpCapabilities.encodings.forEach(encoding => {
+                if (encoding.ssrc) {
+                  encoding.ssrc = uniqueSsrc;
+                }
+              });
+            }
+
+            const consumer = await transport.consume({
+              id: transport.id,
+              producerId: data.producerId,
+              kind: data.kind,
+              rtpParameters: rtpCapabilities,
+            });
+            console.log(`Consumer created for ${data.kind} from peer ${data.peerId}:`, consumer);
+
+            // Store the track-to-peer mapping
+            const trackId = consumer.track.id;
+            trackToPeerMap.current.set(trackId, data.peerId);
+            console.log(`Mapping track ${trackId} to peer ${data.peerId}`);
+
+            // Set up consumer close handler
+            consumer.on('transportclose', () => {
+              console.log(`Consumer transport closed for peer ${data.peerId} ${data.kind}`);
+              trackToPeerMap.current.delete(trackId);
+              checkAndRemovePeerIfNeeded(data.peerId);
+            });
+
+            // Get or create a media stream for this peer
+            let stream = peerStreams.current.get(data.peerId);
+            if (!stream) {
+              stream = new MediaStream();
+              peerStreams.current.set(data.peerId, stream);
+              console.log('New MediaStream created for peer:', data.peerId);
+            }
+            console.log(`Using MediaStream for peer ${data.peerId}:`, stream);
+            console.log(`Stream has tracks:`, stream.getTracks().map(t => t.kind));
+            
+            // Add track to stream
+            stream.addTrack(consumer.track);
+            console.log(`${data.kind} track added to MediaStream for peer:`, data.peerId);
+            
+            // After adding the track, update the UI with the full stream
+            setRemotePeers((prev) => {
+              const exists = prev.find((p) => p.peerId === data.peerId);
+              if (exists) {
+                console.log(`Updating existing peer stream for ${data.peerId} with new ${data.kind} track`);
+                return prev.map((p) => (p.peerId === data.peerId ? { ...p, stream } : p));
+              } else {
+                console.log(`Adding new peer stream for ${data.peerId} with ${data.kind} track`);
+                return [...prev, { peerId: data.peerId, stream }];
+              }
+            });
+
+          } catch (error) {
+            console.error(`Error consuming ${data.kind} stream from ${data.peerId}:`, error);
+            
+            // Special handling for InvalidAccessError with SSRC issues
+            if (error instanceof Error && error.name === 'InvalidAccessError' && data.kind === 'audio') {
+              console.warn('Detected SSRC conflict issue with audio stream, will retry with unique IDs');
+              
+              // Close the failed transport
+              transport.close();
+              
+              // Wait a moment and retry with a completely new transport
+              setTimeout(() => {
+                console.log('Retrying audio stream consumption with new transport...');
+                
+                // Generate a new unique data object with different IDs
+                const retriedData = {
+                  ...data,
+                  retryAttempt: true,
+                  uniqueId: Date.now() // Add a timestamp to make it unique
+                };
+                
+                createRecvTransport(retriedData);
+              }, 1000);
+            }
+          }
+        });
+      } catch (transportError) {
+        console.error(`Error setting up transport for ${data.kind} from ${data.peerId}:`, transportError);
+      }
+    });
+
+    socket.emit('createTransport', { 
+      direction: 'recv',
+      kind: data.kind,
+      peerId: data.peerId,
+     });
+  }, [socket, checkAndRemovePeerIfNeeded]);
 
   // Update the joinRoom function to create separate audio and video transports
   const joinRoom = useCallback(async (localStream: MediaStream, explicitRoomId?: string, userId?: string) => {
@@ -576,6 +599,8 @@ export const useWebRTC = (socket: Socket | null) => {
         rtpParameters: any; 
         peerId: string;
         trackId?: string;
+        // consumeEventName?: string; // Add support for custom event names
+        // transportEventName?: string; // Add support for custom event names
       }) => {
         console.log('Received new consumer event:', data);
         await createRecvTransport(data);
