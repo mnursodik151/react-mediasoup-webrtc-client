@@ -24,6 +24,8 @@ export const useWebRTC = (socket: Socket | null) => {
   const recvTransportRef = useRef<mediasoupClient.types.Transport | null>(null);
   const peerStreams = useRef<Map<string, MediaStream>>(new Map());
   const candidateCounter = useRef<Record<string, number>>({}).current;
+  // Track if consumePeersInRoom has already been emitted
+  const consumePeersEmittedRef = useRef<boolean>(false);
 
   // Add these at the beginning of the hook function
   const connectionStatsRef = useRef<Record<string, any>>({});
@@ -141,11 +143,18 @@ export const useWebRTC = (socket: Socket | null) => {
               callback({ id });
 
               // Check if all transports are ready
-              if (sendVideoTransportRef.current && sendAudioTransportRef.current) {
-                console.log('Both transports created, consuming peers in room with peerId:', peerIdentifier);
-                // Use the passed parameter, not state
-                socket.emit('consumePeersInRoom', { roomId, peerId: peerIdentifier });
-              }
+                if (sendVideoTransportRef.current && sendAudioTransportRef.current) {
+                // Check if we've already emitted the consumePeersInRoom event
+                if (!consumePeersEmittedRef.current) {
+                  console.log('Both transports created, consuming peers in room with peerId:', peerIdentifier);
+                  // Use the passed parameter, not state
+                  socket.emit('consumePeersInRoom', { roomId, peerId: peerIdentifier });
+                  // Mark as emitted
+                  consumePeersEmittedRef.current = true;
+                } else {
+                  console.log('Already emitted consumePeersInRoom, skipping duplicate event');
+                }
+                }
             }
           );
         });
