@@ -325,7 +325,7 @@ export const useWebRTC = (socket: Socket | null) => {
     socket.off(transportEventName);
     
     // Use a unique consume ready event to avoid conflicts
-    const consumeReadyEventName = `readyToConsume`;
+    const consumeReadyEventName = `readyToConsume_${data.peerId}_${data.producerId}`;
     socket.off(consumeReadyEventName);
 
     socket.once(transportEventName, async (options: any) => {
