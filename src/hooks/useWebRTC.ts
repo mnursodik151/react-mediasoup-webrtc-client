@@ -409,25 +409,25 @@ export const useWebRTC = (socket: Socket | null) => {
           }
         });
 
-        // Add request modifiers for audio to fix SSRC issues
-        const additionalOptions = data.kind === 'audio' ? {
-          codecOptions: {
-            opusStereo: true,
-            opusDtx: true,
-            opusFec: true, 
-            opusPtime: 20,
-          },
-          // For audio, specify explicitly that this is a different stream
-          streamId: `${data.peerId}_audio_${Date.now()}`,
-          trackId: `${data.peerId}_audiotrack_${Date.now()}`
-        } : {};
+        // // Add request modifiers for audio to fix SSRC issues
+        // const additionalOptions = data.kind === 'audio' ? {
+        //   codecOptions: {
+        //     opusStereo: true,
+        //     opusDtx: true,
+        //     opusFec: true, 
+        //     opusPtime: 20,
+        //   },
+        //   // For audio, specify explicitly that this is a different stream
+        //   streamId: `${data.peerId}_audio_${Date.now()}`,
+        //   trackId: `${data.peerId}_audiotrack_${Date.now()}`
+        // } : {};
 
         socket.emit('consume', {
           producerId: data.producerId,
           transportId: transport.id,
           rtpCapabilities: deviceRef.current!.rtpCapabilities,
           kind: data.kind,
-          ...additionalOptions // Add the audio-specific options
+          // ...additionalOptions // Add the audio-specific options
         });
 
         // Use a unique event name to avoid conflicts between different consumptions
