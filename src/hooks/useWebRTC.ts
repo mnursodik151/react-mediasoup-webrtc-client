@@ -172,7 +172,8 @@ export const useWebRTC = (socket: Socket | null) => {
 
     socket.emit('createTransport', { 
       direction: 'send',
-      mediaType, // Include the media type in the event
+      kind: mediaType, // Include the media type in the event
+      peerId: peerIdentifier,
     });
   }, [socket, roomId]);
 
