@@ -84,6 +84,16 @@ const ConnectionDebugger: React.FC<ConnectionDebuggerProps> = ({
                 <li key={peer.peerId}>
                   ID: {peer.peerId.substring(0, 8)}... 
                   (Tracks: {peer.stream.getTracks().length})
+                  <ul style={{paddingLeft: '20px', margin: '5px 0'}}>
+                    {peer.stream.getTracks().map(track => (
+                      <li key={track.id}>
+                        {track.kind} - {track.label} 
+                        {track.readyState === 'live' ? '✅' : '❌'}
+                        {track.enabled ? ' (Enabled)' : ' (Disabled)'}
+                        {track.muted ? ' (Muted)' : ' (Unmuted)'}
+                      </li>
+                    ))}
+                  </ul>
                 </li>
               ))}
             </ul>
