@@ -44,21 +44,25 @@ const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
     // Get the first video track and its settings
     const videoTrack = stream.getVideoTracks()[0];
     if (videoTrack) {
-      // const settings = videoTrack.getSettings();
-      // if (settings.width && settings.height) {
-      //   setResolution({ width: settings.width, height: settings.height });
-      // } else {
-      //   // fallback: update on loadedmetadata
-      const video = videoRef.current;
-      if (video) {
-        video.addEventListener('loadedmetadata', () => {
-          console.log(video.videoWidth, video.videoHeight);
-          // Now getSettings() may also have width/height
-          const track = stream.getVideoTracks()[0];
-          console.log(track.getSettings());
-        });
+      const settings = videoTrack.getSettings();
+      if (settings.width && settings.height) {
+        setResolution({ width: settings.width, height: settings.height });
+      } else {
+        // fallback: update on loadedmetadata
+        const video = videoRef.current;
+        if (video) {
+          video.addEventListener('loadedmetadata', () => {
+            console.log(video.videoWidth, video.videoHeight);
+            // Now getSettings() may also have width/height
+            const track = stream.getVideoTracks()[0];
+            console.log(track.getSettings());
+            setResolution({
+              width: video.videoWidth,
+              height: video.videoHeight
+            });
+          });
+        }
       }
-      // }
     }
   }, [stream]);
 
