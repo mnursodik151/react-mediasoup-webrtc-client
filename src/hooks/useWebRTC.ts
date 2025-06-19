@@ -215,7 +215,7 @@ export const useWebRTC = (socket: Socket | null) => {
       if (mediaType === 'video') {
         // Configure encodings for video
         const encodings = [
-          { maxBitrate: 300000, scaleResolutionDownBy: 4 }
+          { maxBitrate: 300000, scaleResolutionDownBy: 1 }
         ];
 
         try {
