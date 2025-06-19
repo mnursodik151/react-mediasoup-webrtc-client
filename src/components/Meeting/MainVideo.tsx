@@ -8,7 +8,7 @@ interface PeerStream {
 interface MainVideoProps {
   activeStream: MediaStream | null;
   activeVideoId: string | null;
-  remotePeers?: PeerStream[]; // Pass remotePeers as prop
+  remotePeers?: PeerStream[];
 }
 
 const MainVideo: React.FC<MainVideoProps> = ({ activeStream, activeVideoId, remotePeers = [] }) => {
@@ -30,45 +30,38 @@ const MainVideo: React.FC<MainVideoProps> = ({ activeStream, activeVideoId, remo
   }, [activeStream]);
 
   useEffect(() => {
-    // Use track.getSettings() from the participant's video track if available
     let cleanup: (() => void) | undefined;
-    if (participant && participant.stream) {
-      const videoTrack = participant.stream.getVideoTracks()[0];
-      if (videoTrack) {
-        const settings = videoTrack.getSettings();
-        if (settings.width && settings.height) {
-          setResolution({ width: settings.width, height: settings.height });
-        } else {
-          // fallback: update on loadedmetadata
-          const video = videoRef.current;
-          if (video) {
-            const handleLoadedMetadata = () => {
-              setResolution({
-                width: video.videoWidth,
-                height: video.videoHeight,
-              });
-            };
-            video.addEventListener('loadedmetadata', handleLoadedMetadata);
-            cleanup = () => {
-              video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-            };
+    let videoTrack: MediaStreamTrack | undefined;
+    if (activeVideoId === 'local' && activeStream) {
+      videoTrack = activeStream.getVideoTracks()[0];
+    } else if (participant && participant.stream) {
+      videoTrack = participant.stream.getVideoTracks()[0];
+    }
+
+    // Try getSettings first
+    if (videoTrack) {
+      const settings = videoTrack.getSettings();
+      if (settings.width && settings.height) {
+        setResolution({ width: settings.width, height: settings.height });
+      } else {
+        // fallback: loadedmetadata
+        const video = videoRef.current;
+        if (video) {
+          const updateResolution = () => {
+            setResolution({
+              width: video.videoWidth,
+              height: video.videoHeight,
+            });
+          };
+          video.addEventListener('loadedmetadata', updateResolution);
+          // If metadata is already loaded, update immediately
+          if (video.videoWidth && video.videoHeight) {
+            updateResolution();
           }
+          cleanup = () => {
+            video.removeEventListener('loadedmetadata', updateResolution);
+          };
         }
-      }
-    } else if (activeVideoId === 'local' && activeStream) {
-      // For local, fallback to loadedmetadata
-      const video = videoRef.current;
-      if (video) {
-        const handleLoadedMetadata = () => {
-          setResolution({
-            width: video.videoWidth,
-            height: video.videoHeight,
-          });
-        };
-        video.addEventListener('loadedmetadata', handleLoadedMetadata);
-        cleanup = () => {
-          video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-        };
       }
     } else {
       setResolution(null);
@@ -91,7 +84,6 @@ const MainVideo: React.FC<MainVideoProps> = ({ activeStream, activeVideoId, remo
       <div className="video-name">
         {activeVideoId === 'local' ? 'You' : `Participant (${activeVideoId})`}
       </div>
-      {/* Metadata stats */}
       <div className="video-meta" style={{
         position: 'absolute',
         bottom: 10,
