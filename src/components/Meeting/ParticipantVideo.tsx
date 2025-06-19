@@ -51,16 +51,12 @@ const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
         // fallback: update on loadedmetadata
         const video = videoRef.current;
         if (video) {
-          const handleLoadedMetadata = () => {
-            setResolution({
-              width: video.videoWidth,
-              height: video.videoHeight,
-            });
-          };
-          video.addEventListener('loadedmetadata', handleLoadedMetadata);
-          return () => {
-            video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-          };
+          video.addEventListener('loadedmetadata', () => {
+            console.log(video.videoWidth, video.videoHeight);
+            // Now getSettings() may also have width/height
+            const track = stream.getVideoTracks()[0];
+            console.log(track.getSettings());
+          });
         }
       }
     }
