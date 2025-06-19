@@ -492,6 +492,9 @@ export const useWebRTC = (socket: Socket | null) => {
             
             // Add track to stream
             stream.addTrack(consumer.track);
+            if(data.kind === 'video') {
+              console.log(`Video track settings for peer ${data.peerId}:`, consumer.track.getSettings());
+            }
             console.log(`${data.kind} track added to MediaStream for peer:`, data.peerId);
             
             // After adding the track, update the UI with the full stream
