@@ -1,14 +1,25 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
+
+interface PeerStream {
+  peerId: string;
+  stream: MediaStream;
+}
 
 interface MainVideoProps {
   activeStream: MediaStream | null;
   activeVideoId: string | null;
+  remotePeers?: PeerStream[]; // Pass remotePeers as prop
 }
 
-const MainVideo: React.FC<MainVideoProps> = ({ activeStream, activeVideoId }) => {
+const MainVideo: React.FC<MainVideoProps> = ({ activeStream, activeVideoId, remotePeers = [] }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [resolution, setResolution] = useState<{ width: number; height: number } | null>(null);
-  const [codec, setCodec] = useState<string | null>(null);
+
+  // Find the participant info for the active video
+  const participant = useMemo(() => {
+    if (!activeVideoId || activeVideoId === 'local') return null;
+    return remotePeers.find(p => p.peerId === activeVideoId) || null;
+  }, [activeVideoId, remotePeers]);
 
   useEffect(() => {
     if (videoRef.current && activeStream) {
@@ -19,43 +30,51 @@ const MainVideo: React.FC<MainVideoProps> = ({ activeStream, activeVideoId }) =>
   }, [activeStream]);
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const handleLoadedMetadata = () => {
-      setResolution({
-        width: video.videoWidth,
-        height: video.videoHeight,
-      });
-    };
-
-    video.addEventListener('loadedmetadata', handleLoadedMetadata);
-
-    // Try to get codec info using WebRTC stats (if available)
-    // const getCodecInfo = async () => {
-    //   // @ts-ignore
-    //   const sender = (activeStream?.getVideoTracks?.() || []).length && window.debugRTC?.transports?.videoSend?.pc?.getSenders?.()
-    //     ? window.debugRTC.transports.videoSend.pc.getSenders().find((s: RTCRtpSender) => s.track === activeStream.getVideoTracks()[0])
-    //     : null;
-    //   if (sender && sender.getStats) {
-    //     const stats = await sender.getStats();
-    //     stats.forEach((report: any) => {
-    //       if (report.type === 'outbound-rtp' && report.codecId) {
-    //         const codecReport = stats.get(report.codecId);
-    //         if (codecReport && codecReport.mimeType) {
-    //           setCodec(codecReport.mimeType);
-    //         }
-    //       }
-    //     });
-    //   }
-    // };
-
-    // getCodecInfo();
-
-    return () => {
-      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-    };
-  }, [activeStream]);
+    // Use track.getSettings() from the participant's video track if available
+    let cleanup: (() => void) | undefined;
+    if (participant && participant.stream) {
+      const videoTrack = participant.stream.getVideoTracks()[0];
+      if (videoTrack) {
+        const settings = videoTrack.getSettings();
+        if (settings.width && settings.height) {
+          setResolution({ width: settings.width, height: settings.height });
+        } else {
+          // fallback: update on loadedmetadata
+          const video = videoRef.current;
+          if (video) {
+            const handleLoadedMetadata = () => {
+              setResolution({
+                width: video.videoWidth,
+                height: video.videoHeight,
+              });
+            };
+            video.addEventListener('loadedmetadata', handleLoadedMetadata);
+            cleanup = () => {
+              video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+            };
+          }
+        }
+      }
+    } else if (activeVideoId === 'local' && activeStream) {
+      // For local, fallback to loadedmetadata
+      const video = videoRef.current;
+      if (video) {
+        const handleLoadedMetadata = () => {
+          setResolution({
+            width: video.videoWidth,
+            height: video.videoHeight,
+          });
+        };
+        video.addEventListener('loadedmetadata', handleLoadedMetadata);
+        cleanup = () => {
+          video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        };
+      }
+    } else {
+      setResolution(null);
+    }
+    return cleanup;
+  }, [participant, activeVideoId, activeStream]);
 
   if (!activeStream) {
     return <div className="no-video">No active video selected</div>;
@@ -88,11 +107,6 @@ const MainVideo: React.FC<MainVideoProps> = ({ activeStream, activeVideoId }) =>
             {resolution.width}x{resolution.height}
           </span>
         )}
-        {/* {codec && (
-          <span style={{ marginLeft: 8 }}>
-            Codec: {codec}
-          </span>
-        )} */}
       </div>
     </div>
   );

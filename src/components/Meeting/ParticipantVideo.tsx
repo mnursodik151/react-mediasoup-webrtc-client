@@ -17,7 +17,6 @@ const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [resolution, setResolution] = useState<{ width: number; height: number } | null>(null);
-  const [codec, setCodec] = useState<string | null>(null);
 
   useEffect(() => {
     const attachStream = async () => {
@@ -42,42 +41,29 @@ const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
   }, [peerId, stream]);
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const handleLoadedMetadata = () => {
-      setResolution({
-        width: video.videoWidth,
-        height: video.videoHeight,
-      });
-    };
-
-    video.addEventListener('loadedmetadata', handleLoadedMetadata);
-
-    // Try to get codec info using WebRTC stats (if available)
-    // const getCodecInfo = async () => {
-    //   // @ts-ignore
-    //   const receiver = (stream?.getVideoTracks?.() || []).length && window.debugRTC?.transports?.videoSend?.pc?.getReceivers?.()
-    //     ? window.debugRTC.transports.videoSend.pc.getReceivers().find((r: RTCRtpReceiver) => r.track === stream.getVideoTracks()[0])
-    //     : null;
-    //   if (receiver && receiver.getStats) {
-    //     const stats = await receiver.getStats();
-    //     stats.forEach((report: any) => {
-    //       if (report.type === 'inbound-rtp' && report.codecId) {
-    //         const codecReport = stats.get(report.codecId);
-    //         if (codecReport && codecReport.mimeType) {
-    //           setCodec(codecReport.mimeType);
-    //         }
-    //       }
-    //     });
-    //   }
-    // };
-
-    // getCodecInfo();
-
-    return () => {
-      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-    };
+    // Get the first video track and its settings
+    const videoTrack = stream.getVideoTracks()[0];
+    if (videoTrack) {
+      const settings = videoTrack.getSettings();
+      if (settings.width && settings.height) {
+        setResolution({ width: settings.width, height: settings.height });
+      } else {
+        // fallback: update on loadedmetadata
+        const video = videoRef.current;
+        if (video) {
+          const handleLoadedMetadata = () => {
+            setResolution({
+              width: video.videoWidth,
+              height: video.videoHeight,
+            });
+          };
+          video.addEventListener('loadedmetadata', handleLoadedMetadata);
+          return () => {
+            video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+          };
+        }
+      }
+    }
   }, [stream]);
 
   return (
@@ -125,11 +111,6 @@ const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
             {resolution.width}x{resolution.height}
           </span>
         )}
-        {/* {codec && (
-          <span style={{ marginLeft: 6 }}>
-            Codec: {codec}
-          </span>
-        )} */}
       </div>
     </div>
   );
