@@ -216,11 +216,13 @@ body {
 }
 
 .config-modal {
-  background: white;
+  background: #23272f; /* Changed from white to dark for contrast */
   border-radius: 8px;
   padding: 20px;
   width: 400px;
   max-width: 90%;
+  color: #fff; /* Ensure text is white */
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
 }
 
 .config-modal h2 {
@@ -326,10 +328,12 @@ body {
 }
 
 .invitation-details {
-  background-color: #f8f9fa;
+  background-color: #181b20; /* Darker background for contrast */
+  color: #fff; /* Ensure text is white */
   padding: 15px;
   border-radius: 4px;
   margin: 15px 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 
 .invitation-details p {
