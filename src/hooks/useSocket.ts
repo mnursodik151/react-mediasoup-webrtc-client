@@ -84,7 +84,15 @@ export const useSocket = (namespace = '/mediasoup') => { // Default to mediasoup
 
       // Add invitation listener (specific to WebRTC)
       if (namespace === '/mediasoup') {
-        newSocket.on('invitedToRoom', (invitation: { roomId: string; peerId: string; inviterId: string }) => {
+        newSocket.on('invitedToRoom', (invitation: { 
+          roomId: string, 
+          peerId: string, 
+          inviterId: string, 
+          inviterProfile: {
+            username: string; 
+            avatarUrl: string;
+          } 
+        }) => {
           console.log('Received room invitation:', invitation);
           setIncomingInvitation(invitation);
           setShowInvitationModal(true);
