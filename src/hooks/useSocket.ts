@@ -173,7 +173,7 @@ export const useSocket = (namespace = '/mediasoup') => { // Default to mediasoup
       roomId, 
       peerId,
       inviteeIds,
-      peerProfile : { username: `user-of-${userId}`, avatarUrl: 'https://www.google.com' } 
+      peerProfile : { username: `user-of-${userId}`, avatarUrl: 'https://picsum.photos/seed/lilililbahlil/200/300' } 
     });
   }, [socket]);
 
