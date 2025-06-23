@@ -8,7 +8,8 @@ interface InvitationModalProps {
     inviterProfile: {
       username: string;
       avatarUrl: string;
-    }
+    };
+    scheduledDate?: string;
   } | null;
   onAccept: () => void;
   onDecline: () => void;

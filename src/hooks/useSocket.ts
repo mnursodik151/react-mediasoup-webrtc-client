@@ -88,10 +88,11 @@ export const useSocket = (namespace = '/mediasoup') => { // Default to mediasoup
           roomId: string, 
           peerId: string, 
           inviterId: string, 
-          inviterProfile: {
+          inviterProfile?: {
             username: string; 
             avatarUrl: string;
           } 
+          scheduledDate?: string
         }) => {
           console.log('Received room invitation:', invitation);
           setIncomingInvitation(invitation);
