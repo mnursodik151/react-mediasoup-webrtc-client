@@ -171,9 +171,9 @@ export const useSocket = (namespace = '/mediasoup') => { // Default to mediasoup
     console.log(`Sending room invitations to ${inviteeIds.length} users for room ${roomId}`);
     socket.emit('inviteToRoom', { 
       roomId, 
-      peerId,
+      inviterId: peerId,
       inviteeIds,
-      peerProfile : { username: `user-of-${userId}`, avatarUrl: 'https://picsum.photos/seed/lilililbahlil/200/300' } 
+      inviterProfile : { username: `user-of-${userId}`, avatarUrl: 'https://picsum.photos/seed/lilililbahlil/200/300' } 
     });
   }, [socket]);
 
