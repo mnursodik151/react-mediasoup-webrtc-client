@@ -164,7 +164,8 @@ export const useSocket = (namespace = '/mediasoup') => { // Default to mediasoup
     socket.emit('inviteToRoom', { 
       roomId, 
       peerId,
-      inviteeIds 
+      inviteeIds,
+      peerProfile : { username: `user-of-${userId}`, avatarUrl: 'https://www.google.com' } 
     });
   }, [socket]);
 
