@@ -5,7 +5,32 @@ import { Socket } from 'socket.io-client';
 export type PeerStream = {
   peerId: string;
   stream: MediaStream;
+  userProfile?: {
+    userId: string;
+    username: string;
+    email: string;
+    avatar: string;
+    deviceType: string;
+  };
 };
+
+// Define a TypeScript interface for the newConsumer event data
+export type NewConsumerEventData = {
+  producerId: string;
+  kind: "audio" | "video";
+  rtpParameters: any;
+  peerId: string;
+  trackId?: string;
+  userProfile: {
+    userId: string;
+    username: string;
+    email: string;
+    avatar: string;
+    deviceType: string;
+  };
+  // consumeEventName?: string;
+  // transportEventName?: string;
+}
 
 export const useWebRTC = (socket: Socket | null) => {
   // Add codec configuration
@@ -315,13 +340,7 @@ export const useWebRTC = (socket: Socket | null) => {
   }, []);
 
   // Modified to handle multiple tracks from the same peer with improved error handling
-  const createRecvTransport = useCallback(async (data: {
-    producerId: string;
-    kind: 'audio' | 'video';
-    rtpParameters: any;
-    peerId: string;
-    trackId?: string;
-  }) => {
+  const createRecvTransport = useCallback(async (data: NewConsumerEventData) => {
     if (!socket || !deviceRef.current) return;
 
     console.log(`Creating receive transport for ${data.kind} from peer ${data.peerId}...`);
@@ -500,10 +519,10 @@ export const useWebRTC = (socket: Socket | null) => {
               const exists = prev.find((p) => p.peerId === data.peerId);
               if (exists) {
                 console.log(`Updating existing peer stream for ${data.peerId} with new ${data.kind} track`);
-                return prev.map((p) => (p.peerId === data.peerId ? { ...p, stream } : p));
+                return prev.map((p) => (p.peerId === data.peerId ? { ...p, stream, userProfile: data.userProfile } : p));
               } else {
                 console.log(`Adding new peer stream for ${data.peerId} with ${data.kind} track`);
-                return [...prev, { peerId: data.peerId, stream }];
+                return [...prev, { peerId: data.peerId, stream, userProfile: data.userProfile }];
               }
             });
 
@@ -606,24 +625,6 @@ export const useWebRTC = (socket: Socket | null) => {
           ]);
         });
       });
-
-      // Define a TypeScript interface for the newConsumer event data
-      interface NewConsumerEventData {
-        producerId: string;
-        kind: "audio" | "video";
-        rtpParameters: any;
-        peerId: string;
-        trackId?: string;
-        userProfile: {
-          userId: string;
-          username: string;
-          email: string;
-          avatar: string;
-          deviceType: string;
-        };
-        // consumeEventName?: string;
-        // transportEventName?: string;
-      }
 
       socket.on('newConsumer', async (data: NewConsumerEventData) => {
         console.log('Received new consumer event:', data);

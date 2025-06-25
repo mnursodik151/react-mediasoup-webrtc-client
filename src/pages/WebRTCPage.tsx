@@ -395,13 +395,15 @@ export default function MediaRoom() {
             onClick={() => setActiveVideoId('local')}
           />
 
-          {remotePeers.map(({ peerId, stream }) => (
+          {remotePeers.map(({ peerId, stream, userProfile }) => (
             <ParticipantVideo
               key={peerId}
               stream={stream}
               peerId={peerId}
               isActive={activeVideoId === peerId}
               onClick={() => setActiveVideoId(peerId)}
+              username={userProfile?.username}
+              avatar={userProfile?.avatar}
             />
           ))}
         </div>

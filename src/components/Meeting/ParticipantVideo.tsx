@@ -6,6 +6,8 @@ interface ParticipantVideoProps {
   isActive: boolean;
   isLocal?: boolean;
   onClick: () => void;
+  username?: string;
+  avatar?: string;
 }
 
 const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
@@ -13,7 +15,9 @@ const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
   peerId,
   isActive,
   isLocal = false,
-  onClick
+  onClick,
+  username,
+  avatar
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [resolution, setResolution] = useState<{ width: number; height: number } | null>(null);
@@ -79,8 +83,21 @@ const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
         muted={isLocal}
         style={{ width: '100%', height: '100%' }}
       />
-      <div className="participant-name">
-        {isLocal ? 'You' : `Peer ${peerId.substring(0, 6)}...`}
+      <div className="participant-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {isLocal ? (
+          'You'
+        ) : (
+          <>
+            {avatar && (
+              <img
+                src={avatar}
+                alt={username || 'avatar'}
+                style={{ width: 24, height: 24, borderRadius: '50%', marginRight: 4 }}
+              />
+            )}
+            <span>{username || `Peer ${peerId.substring(0, 6)}...`}</span>
+          </>
+        )}
       </div>
       {/* Add a track counter for debugging */}
       <div className="track-counter" style={{

@@ -3,6 +3,13 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 interface PeerStream {
   peerId: string;
   stream: MediaStream;
+  userProfile: {
+    userId: string;
+    username: string;
+    email: string;
+    avatar: string;
+    deviceType: string;
+  };
 }
 
 interface MainVideoProps {
