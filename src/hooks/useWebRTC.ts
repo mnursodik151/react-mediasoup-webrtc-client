@@ -564,6 +564,7 @@ export const useWebRTC = (socket: Socket | null) => {
 
     try {
       // Use provided userId or generate a random peerId as fallback
+      console.log('Using userId for Peer ID:', userId);
       const generatedPeerId = userId || `peer-${Math.random().toString(36).substring(2, 15)}`;
       setPeerId(generatedPeerId);
       console.log('Using Peer ID:', generatedPeerId);
@@ -606,27 +607,31 @@ export const useWebRTC = (socket: Socket | null) => {
         });
       });
 
-      socket.on('newConsumer', async (data: {
+      // Define a TypeScript interface for the newConsumer event data
+      interface NewConsumerEventData {
         producerId: string;
         kind: "audio" | "video";
         rtpParameters: any;
         peerId: string;
         trackId?: string;
-        // consumeEventName?: string; // Add support for custom event names
-        // transportEventName?: string; // Add support for custom event names
-      }) => {
+        userProfile: {
+          userId: string;
+          username: string;
+          email: string;
+          avatar: string;
+          deviceType: string;
+        };
+        // consumeEventName?: string;
+        // transportEventName?: string;
+      }
+
+      socket.on('newConsumer', async (data: NewConsumerEventData) => {
         console.log('Received new consumer event:', data);
         await createRecvTransport(data);
       });
 
       socket.on('newConsumers', async (data: {
-        producers: {
-          producerId: string;
-          kind: 'audio' | 'video';
-          rtpParameters: any;
-          peerId: string;
-          trackId?: string;
-        }[]
+        producers: NewConsumerEventData[]
       }) => {
         console.log('Received new consumers event:', data);
 

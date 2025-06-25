@@ -149,7 +149,7 @@ export default function MediaRoom() {
         console.log('Local video stream set.');
       }
 
-      await joinRoom(stream);
+      await joinRoom(stream, roomId, userId);
     } catch (error) {
       console.error('Error joining room:', error);
       
@@ -165,7 +165,7 @@ export default function MediaRoom() {
             .catch(() => null);
             
           if (audioOnlyStream) {
-            await joinRoom(audioOnlyStream);
+            await joinRoom(audioOnlyStream, roomId, userId);
           } else {
             console.error('Failed to get audio stream');
             alert('Could not access microphone. Join canceled.');
