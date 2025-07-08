@@ -240,7 +240,7 @@ export const useWebRTC = (socket: Socket | null) => {
       if (mediaType === 'video') {
         // Configure simulcast encodings for video
         const encodings = [
-          { maxBitrate: 1500000, dtx: false } // High quality
+          { rid: 'r0', dtx: false, scalabilityMode: 'S3T3', maxBitrate: 1500000 }, // Set a reasonable max bitrate
         ];
 
         try {
@@ -280,7 +280,7 @@ export const useWebRTC = (socket: Socket | null) => {
             await transport.produce({
               track,
               encodings: [
-                { maxBitrate: 1500000, dtx: false }
+                { rid: 'r0', dtx: false, scalabilityMode: 'S3T3', maxBitrate: 1500000 } // Set a reasonable max bitrate
               ] // Simplified encoding
             });
           } else {
@@ -488,6 +488,22 @@ export const useWebRTC = (socket: Socket | null) => {
               rtpParameters: rtpCapabilities,
             });
             console.log(`Consumer created for ${data.kind} from peer ${data.peerId}:`, consumer);
+
+            // // FIX: Request highest layers and start the media flow
+            // if (consumer.kind === 'video') {
+            //   try {
+            //     // Request the highest possible video layers
+            //     await socket.emit('setPreferredLayers', { producerId: data.producerId, spatialLayer: 2, temporalLayer: 2 });
+            //     console.log(`Requested preferred layers for consumer ${consumer.id}`);
+            //   } catch (error) {
+            //     console.error('Failed to set preferred layers', error);
+            //   }
+            // }
+
+            // // It's also good practice to explicitly resume the consumer on the client
+            // // This tells the server to start sending media for this consumer
+            // await socket.emit('resumeConsumer', { producerId: data.producerId });
+            // console.log(`Resumed consumer ${consumer.id}`);
 
             // Store the track-to-peer mapping
             const trackId = consumer.track.id;
