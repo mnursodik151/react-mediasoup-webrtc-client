@@ -100,10 +100,10 @@ export const useWebRTC = (socket: Socket | null) => {
           dtlsParameters: options.dtlsParameters,
           iceServers: options.turnServers,
           // Add these configurations to encourage TURN usage
+          iceTransportPolicy: 'relay' as RTCIceTransportPolicy, // Force using relay candidates only
           additionalIceParameters: {
             iceLite: false, // Ensure full ICE implementation
             iceControlling: true, // Try to take control of ICE negotiation
-            iceTransportPolicy: 'relay' as RTCIceTransportPolicy, // Force using relay candidates only
           }
         };
 
@@ -240,9 +240,7 @@ export const useWebRTC = (socket: Socket | null) => {
       if (mediaType === 'video') {
         // Configure simulcast encodings for video
         const encodings = [
-          // { rid: 'q', scaleResolutionDownBy: 4, maxBitrate: 150000 }, // Low quality
-          // { rid: 'h', scaleResolutionDownBy: 2, maxBitrate: 500000 }, // Medium quality
-          { rid: 'f', scaleResolutionDownBy: 1, maxBitrate: 1500000 } // High quality
+          { maxBitrate: 1500000, dtx: false } // High quality
         ];
 
         try {
@@ -282,9 +280,7 @@ export const useWebRTC = (socket: Socket | null) => {
             await transport.produce({
               track,
               encodings: [
-                // { rid: 'q', scaleResolutionDownBy: 4, maxBitrate: 150000 },
-                // { rid: 'h', scaleResolutionDownBy: 2, maxBitrate: 500000 },
-                { rid: 'f', scaleResolutionDownBy: 1, maxBitrate: 1500000 }
+                { maxBitrate: 1500000, dtx: false }
               ] // Simplified encoding
             });
           } else {
