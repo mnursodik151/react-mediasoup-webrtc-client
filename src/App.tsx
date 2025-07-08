@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import WebRTCPage from './pages/WebRTCPage';
 import ChatPage from './pages/ChatPage';
+import FCMNotificationPage from './pages/FCMNotificationPage';
 import reactLogo from './assets/react.svg';
 import viteLogo from '/vite.svg';
 import './App.css';
@@ -33,6 +34,11 @@ function App() {
                 💬 Chat
               </Link>
             </li>
+            <li>
+              <Link to="/notifications" style={{ textDecoration: 'none', color: 'green', fontWeight: 'bold' }}>
+                🔔 FCM Notifications
+              </Link>
+            </li>
           </ul>
         </nav>
         <div className="card">
@@ -49,6 +55,7 @@ function App() {
         <Routes>
           <Route path="/video" element={<WebRTCPage />} />
           <Route path="/chat" element={<ChatPage />} />
+          <Route path="/notifications" element={<FCMNotificationPage />} />
           <Route path="/" element={<WebRTCPage />} />
         </Routes>
       </>

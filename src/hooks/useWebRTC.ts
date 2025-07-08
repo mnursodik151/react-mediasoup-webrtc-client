@@ -238,9 +238,11 @@ export const useWebRTC = (socket: Socket | null) => {
 
       // Configure options based on media type
       if (mediaType === 'video') {
-        // Configure encodings for video
+        // Configure simulcast encodings for video
         const encodings = [
-          { maxBitrate: 300000, scaleResolutionDownBy: 1 }
+          // { rid: 'q', scaleResolutionDownBy: 4, maxBitrate: 150000 }, // Low quality
+          // { rid: 'h', scaleResolutionDownBy: 2, maxBitrate: 500000 }, // Medium quality
+          { rid: 'f', scaleResolutionDownBy: 1, maxBitrate: 1500000 } // High quality
         ];
 
         try {
@@ -279,7 +281,11 @@ export const useWebRTC = (socket: Socket | null) => {
             // If codec selection fails, fall back to default with no codec specification
             await transport.produce({
               track,
-              encodings: [{ maxBitrate: 1000000 }] // Simplified encoding
+              encodings: [
+                // { rid: 'q', scaleResolutionDownBy: 4, maxBitrate: 150000 },
+                // { rid: 'h', scaleResolutionDownBy: 2, maxBitrate: 500000 },
+                { rid: 'f', scaleResolutionDownBy: 1, maxBitrate: 1500000 }
+              ] // Simplified encoding
             });
           } else {
             console.error('Track became unavailable after codec error');
