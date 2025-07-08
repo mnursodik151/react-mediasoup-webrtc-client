@@ -7,6 +7,7 @@ export const useSocket = (namespace = '/mediasoup') => { // Default to mediasoup
   const [userId, setUserId] = useState<string>(localStorage.getItem('userId') || '');
   const [showConfigModal, setShowConfigModal] = useState<boolean>(!localStorage.getItem('userId'));
   const [incomingInvitation, setIncomingInvitation] = useState<{
+    inviterProfile: { username: string; avatarUrl: string; };
     roomId: string;
     peerId: string;
     inviterId: string;
@@ -95,7 +96,17 @@ export const useSocket = (namespace = '/mediasoup') => { // Default to mediasoup
           scheduledDate?: string
         }) => {
           console.log('Received room invitation:', invitation);
-          setIncomingInvitation(invitation);
+          if (invitation.inviterProfile) {
+            setIncomingInvitation({
+              inviterProfile: invitation.inviterProfile,
+              roomId: invitation.roomId,
+              peerId: invitation.peerId,
+              inviterId: invitation.inviterId,
+            });
+          } else {
+            // fallback or ignore if inviterProfile is missing
+            console.warn('Invitation missing inviterProfile, ignoring invitation:', invitation);
+          }
           setShowInvitationModal(true);
         });
       }

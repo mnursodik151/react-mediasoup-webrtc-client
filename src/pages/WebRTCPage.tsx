@@ -82,6 +82,52 @@ export default function MediaRoom() {
     peerId: string;
   } | null>(null);
 
+  // --- Set Consumer Preferred Layers Form State ---
+  const [layerForm, setLayerForm] = useState({
+    consumerId: '',
+    spatialLayer: '',
+    temporalLayer: '',
+  });
+  const [layerFormStatus, setLayerFormStatus] = useState<string | null>(null);
+
+  // Listen for server responses
+  useEffect(() => {
+    if (!socket) return;
+    const onLayersSet = (data: { consumerId: string; spatialLayer: number; temporalLayer: number }) => {
+      setLayerFormStatus(
+        `Layers set for consumer ${data.consumerId}: spatial=${data.spatialLayer}, temporal=${data.temporalLayer}`
+      );
+    };
+    const onLayersError = (data: { consumerId: string; error: string }) => {
+      setLayerFormStatus(`Error for consumer ${data.consumerId}: ${data.error}`);
+    };
+    socket.on('consumerLayersSet', onLayersSet);
+    socket.on('consumerLayersError', onLayersError);
+    return () => {
+      socket.off('consumerLayersSet', onLayersSet);
+      socket.off('consumerLayersError', onLayersError);
+    };
+  }, [socket]);
+
+  // Form submit handler
+  const handleLayerFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!layerForm.consumerId || layerForm.spatialLayer === '' || layerForm.temporalLayer === '') {
+      setLayerFormStatus('All fields are required.');
+      return;
+    }
+    if (!socket) {
+      setLayerFormStatus('Socket not connected.');
+      return;
+    }
+    setLayerFormStatus('Sending...');
+    socket.emit('setConsumerPreferedLayers', {
+      consumerId: layerForm.consumerId,
+      spatialLayer: Number(layerForm.spatialLayer),
+      temporalLayer: Number(layerForm.temporalLayer),
+    });
+  };
+
   // Add this function to check browser compatibility
   const checkMediaDeviceSupport = () => {
     if (!navigator || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -298,7 +344,10 @@ export default function MediaRoom() {
 
       return (
         <InvitationModal
-          invitation={incomingInvitation}
+          invitation={{
+            ...incomingInvitation,
+            inviterProfile: incomingInvitation.inviterProfile || { username: 'Unknown', avatarUrl: '' }
+          }}
           onAccept={handleAcceptInvitation}
           onDecline={handleDeclineInvitation}
           isLoading={acceptingInvitation}
@@ -395,7 +444,7 @@ export default function MediaRoom() {
             onClick={() => setActiveVideoId('local')}
           />
 
-          {remotePeers.map(({ peerId, stream, userProfile }) => (
+          {remotePeers.map(({ peerId, stream, userProfile, consumerId }) => (
             <ParticipantVideo
               key={peerId}
               stream={stream}
@@ -404,6 +453,8 @@ export default function MediaRoom() {
               onClick={() => setActiveVideoId(peerId)}
               username={userProfile?.username}
               avatar={userProfile?.avatar}
+              consumerId={consumerId}
+              socket={socket}
             />
           ))}
         </div>

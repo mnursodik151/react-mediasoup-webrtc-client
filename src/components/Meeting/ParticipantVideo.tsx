@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Socket } from 'socket.io-client';
+import SetConsumerLayersForm from './SetConsumerLayersForm';
 
 interface ParticipantVideoProps {
   stream: MediaStream;
@@ -8,6 +10,8 @@ interface ParticipantVideoProps {
   onClick: () => void;
   username?: string;
   avatar?: string;
+  consumerId?: string;
+  socket?: Socket | null;
 }
 
 const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
@@ -17,10 +21,13 @@ const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
   isLocal = false,
   onClick,
   username,
-  avatar
+  avatar,
+  consumerId,
+  socket
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [resolution, setResolution] = useState<{ width: number; height: number } | null>(null);
+  const [showLayersModal, setShowLayersModal] = useState(false);
 
   useEffect(() => {
     const attachStream = async () => {
@@ -129,6 +136,49 @@ const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
           </span>
         )}
       </div>
+      {/* Set Consumer Preferred Layers Modal (remote only) */}
+      {!isLocal && consumerId && socket && (
+        <>
+          <button
+            style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 2, fontSize: 10, padding: '2px 8px' }}
+            onClick={e => { e.stopPropagation(); setShowLayersModal(true); }}
+          >
+            Set Layers
+          </button>
+          {showLayersModal && (
+            <div
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                width: '100vw',
+                height: '100vh',
+                background: 'rgba(0,0,0,0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000
+              }}
+              onClick={() => setShowLayersModal(false)}
+            >
+              <div
+                style={{ background: '#222', padding: 20, borderRadius: 8, minWidth: 220, position: 'relative' }}
+                onClick={e => e.stopPropagation()}
+              >
+                <button
+                  style={{ position: 'absolute', top: 6, right: 8, background: 'none', color: '#fff', border: 'none', fontSize: 16, cursor: 'pointer' }}
+                  onClick={() => setShowLayersModal(false)}
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+                <h5 style={{ color: '#fff', margin: '0 0 8px 0', fontSize: 14 }}>Set Layers for {username || peerId}</h5>
+                <SetConsumerLayersForm consumerId={consumerId} socket={socket} />
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 };

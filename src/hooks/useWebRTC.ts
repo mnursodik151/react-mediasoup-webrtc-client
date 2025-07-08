@@ -5,6 +5,7 @@ import { Socket } from 'socket.io-client';
 export type PeerStream = {
   peerId: string;
   stream: MediaStream;
+  consumerId?: string; // <-- Add this line
   userProfile?: {
     userId: string;
     username: string;
@@ -537,10 +538,22 @@ export const useWebRTC = (socket: Socket | null) => {
               const exists = prev.find((p) => p.peerId === data.peerId);
               if (exists) {
                 console.log(`Updating existing peer stream for ${data.peerId} with new ${data.kind} track`);
-                return prev.map((p) => (p.peerId === data.peerId ? { ...p, stream, userProfile: data.userProfile } : p));
+                return prev.map((p) =>
+                  p.peerId === data.peerId
+                    ? { ...p, stream, userProfile: data.userProfile, consumerId: consumer.id }
+                    : p
+                );
               } else {
                 console.log(`Adding new peer stream for ${data.peerId} with ${data.kind} track`);
-                return [...prev, { peerId: data.peerId, stream, userProfile: data.userProfile }];
+                return [
+                  ...prev,
+                  {
+                    peerId: data.peerId,
+                    stream,
+                    userProfile: data.userProfile,
+                    consumerId: consumer.id,
+                  },
+                ];
               }
             });
 
