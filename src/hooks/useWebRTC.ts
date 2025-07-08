@@ -241,7 +241,7 @@ export const useWebRTC = (socket: Socket | null) => {
       if (mediaType === 'video') {
         // Configure simulcast encodings for video
         const encodings = [
-          { rid: 'r0', scalabilityMode: 'L3T3', maxBitrate: 1500000 }, // Set a reasonable max bitrate
+          { rid: 'r0', scalabilityMode: 'L1T3', maxBitrate: 1500000 }, // Set a reasonable max bitrate
         ];
 
         try {
@@ -281,7 +281,7 @@ export const useWebRTC = (socket: Socket | null) => {
             await transport.produce({
               track,
               encodings: [
-                { dtx: false, scalabilityMode: 'L3T3', maxBitrate: 1500000 } // Set a reasonable max bitrate
+                { dtx: false, scalabilityMode: 'L1T3', maxBitrate: 1500000 } // Set a reasonable max bitrate
               ] // Simplified encoding
             });
           } else {
