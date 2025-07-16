@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import WebRTCPage from './pages/WebRTCPage';
 import ChatPage from './pages/ChatPage';
 import FCMNotificationPage from './pages/FCMNotificationPage';
+import DoodlePage from './pages/DoodlePage';
 import reactLogo from './assets/react.svg';
 import viteLogo from '/vite.svg';
 import './App.css';
@@ -39,6 +40,11 @@ function App() {
                 🔔 FCM Notifications
               </Link>
             </li>
+            <li>
+              <Link to="/doodle" style={{ textDecoration: 'none', color: 'orange', fontWeight: 'bold' }}>
+                🎨 Doodle
+              </Link>
+            </li>
           </ul>
         </nav>
         <div className="card">
@@ -56,6 +62,7 @@ function App() {
           <Route path="/video" element={<WebRTCPage />} />
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/notifications" element={<FCMNotificationPage />} />
+          <Route path="/doodle" element={<DoodlePage />} />
           <Route path="/" element={<WebRTCPage />} />
         </Routes>
       </>

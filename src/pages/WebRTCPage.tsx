@@ -84,7 +84,7 @@ export default function MediaRoom() {
 
   // --- Set Consumer Preferred Layers Form State ---
   const [layerForm, setLayerForm] = useState({
-    consumerId: '',
+    producerId: '',
     spatialLayer: '',
     temporalLayer: '',
   });
@@ -93,13 +93,13 @@ export default function MediaRoom() {
   // Listen for server responses
   useEffect(() => {
     if (!socket) return;
-    const onLayersSet = (data: { consumerId: string; spatialLayer: number; temporalLayer: number }) => {
+    const onLayersSet = (data: { producerId: string; spatialLayer: number; temporalLayer: number }) => {
       setLayerFormStatus(
-        `Layers set for consumer ${data.consumerId}: spatial=${data.spatialLayer}, temporal=${data.temporalLayer}`
+        `Layers set for consumer ${data.producerId}: spatial=${data.spatialLayer}, temporal=${data.temporalLayer}`
       );
     };
-    const onLayersError = (data: { consumerId: string; error: string }) => {
-      setLayerFormStatus(`Error for consumer ${data.consumerId}: ${data.error}`);
+    const onLayersError = (data: { producerId: string; error: string }) => {
+      setLayerFormStatus(`Error for consumer ${data.producerId}: ${data.error}`);
     };
     socket.on('consumerLayersSet', onLayersSet);
     socket.on('consumerLayersError', onLayersError);
@@ -112,7 +112,7 @@ export default function MediaRoom() {
   // Form submit handler
   const handleLayerFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!layerForm.consumerId || layerForm.spatialLayer === '' || layerForm.temporalLayer === '') {
+    if (!layerForm.producerId || layerForm.spatialLayer === '' || layerForm.temporalLayer === '') {
       setLayerFormStatus('All fields are required.');
       return;
     }
@@ -122,7 +122,7 @@ export default function MediaRoom() {
     }
     setLayerFormStatus('Sending...');
     socket.emit('setConsumerPreferedLayers', {
-      consumerId: layerForm.consumerId,
+      producerId: layerForm.producerId,
       spatialLayer: Number(layerForm.spatialLayer),
       temporalLayer: Number(layerForm.temporalLayer),
     });
@@ -444,7 +444,7 @@ export default function MediaRoom() {
             onClick={() => setActiveVideoId('local')}
           />
 
-          {remotePeers.map(({ peerId, stream, userProfile, consumerId }) => (
+          {remotePeers.map(({ peerId, stream, userProfile, producerId: producerId }) => (
             <ParticipantVideo
               key={peerId}
               stream={stream}
@@ -453,7 +453,7 @@ export default function MediaRoom() {
               onClick={() => setActiveVideoId(peerId)}
               username={userProfile?.username}
               avatar={userProfile?.avatar}
-              consumerId={consumerId}
+              producerId={producerId}
               socket={socket}
             />
           ))}

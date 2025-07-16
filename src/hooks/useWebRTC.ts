@@ -5,7 +5,7 @@ import { Socket } from 'socket.io-client';
 export type PeerStream = {
   peerId: string;
   stream: MediaStream;
-  consumerId?: string; // <-- Add this line
+  producerId?: string; // <-- Add this line
   userProfile?: {
     userId: string;
     username: string;
@@ -99,13 +99,13 @@ export const useWebRTC = (socket: Socket | null) => {
           iceParameters: options.iceParameters,
           iceCandidates: options.iceCandidates,
           dtlsParameters: options.dtlsParameters,
-          iceServers: options.turnServers,
+          // iceServers: options.turnServers,
           // Add these configurations to encourage TURN usage
-          iceTransportPolicy: 'relay' as RTCIceTransportPolicy, // Force using relay candidates only
-          additionalIceParameters: {
-            iceLite: false, // Ensure full ICE implementation
-            iceControlling: true, // Try to take control of ICE negotiation
-          }
+          iceTransportPolicy: 'all' as RTCIceTransportPolicy, // Force using relay candidates only
+          // additionalIceParameters: {
+          //   iceLite: false, // Ensure full ICE implementation
+          //   iceControlling: true, // Try to take control of ICE negotiation
+          // }
         };
 
         console.log(`Creating ${mediaType} send transport with TURN servers:`, options.turnServers);
@@ -265,7 +265,7 @@ export const useWebRTC = (socket: Socket | null) => {
             console.log('Using minimal codec configuration:', minimalCodec);
             await transport.produce({
               track,
-              encodings,
+              codecOptions: { videoGoogleMaxBitrate: 3000000, videoGoogleMinBitrate: 2500000 }, // Set a reasonable max bitrate
               codec: minimalCodec
             });
           } else {
@@ -280,9 +280,7 @@ export const useWebRTC = (socket: Socket | null) => {
             // If codec selection fails, fall back to default with no codec specification
             await transport.produce({
               track,
-              encodings: [
-                { dtx: false, scalabilityMode: 'L1T3', maxBitrate: 1500000 } // Set a reasonable max bitrate
-              ] // Simplified encoding
+              codecOptions: { videoGoogleMaxBitrate: 3000000, videoGoogleMinBitrate: 2500000 } // Set a reasonable max bitrate
             });
           } else {
             console.error('Track became unavailable after codec error');
@@ -377,13 +375,13 @@ export const useWebRTC = (socket: Socket | null) => {
           iceParameters: options.iceParameters,
           iceCandidates: options.iceCandidates,
           dtlsParameters: options.dtlsParameters,
-          iceServers: options.turnServers,
+          // iceServers: options.turnServers,
           // Add these configurations to encourage TURN usage
-          iceTransportPolicy: 'relay' as RTCIceTransportPolicy,
-          additionalIceParameters: {
-            iceLite: false,
-            iceControlling: true
-          }
+          iceTransportPolicy: 'all' as RTCIceTransportPolicy,
+          // additionalIceParameters: {
+          //   iceLite: false,
+          //   iceControlling: true
+          // }
         };
 
         console.log(`Creating receive transport for ${data.kind} with TURN servers:`, options.turnServers);
@@ -534,24 +532,39 @@ export const useWebRTC = (socket: Socket | null) => {
             console.log(`${data.kind} track added to MediaStream for peer:`, data.peerId);
 
             // After adding the track, update the UI with the full stream
+            if (data.kind === 'video') {
+              setInterval(() => {
+                // log transport.getstats() every 5 seconds
+                // iterate through the transport's stats
+                transport.getStats().then(stats => {
+                  stats.forEach(stat => {
+                    if(stat.type === 'inbound-rtp' && stat.frameHeight && stat.frameWidth) {
+                      console.log(`Video stats for ${data.peerId} - Frame Size: ${stat.frameWidth}x${stat.frameHeight}, Frame Rate: ${stat.framesPerSecond}`);
+                    }
+                  });
+                }).catch(err => {
+                  console.error(`Error getting stats for ${data.kind} transport from ${data.peerId}:`, err);
+                });
+              }, 5000);
+            }
             setRemotePeers((prev) => {
               const exists = prev.find((p) => p.peerId === data.peerId);
               if (exists) {
-                console.log(`Updating existing peer stream for ${data.peerId} with new ${data.kind} track`);
+                console.log(`Updating existing peer stream for ${data.peerId} with new ${data.kind} track producerId ${data.producerId}`);
                 return prev.map((p) =>
                   p.peerId === data.peerId
-                    ? { ...p, stream, userProfile: data.userProfile, consumerId: consumer.id }
+                    ? { ...p, stream, userProfile: data.userProfile, producerId: data.kind == 'video' ? data.producerId : p.producerId }
                     : p
                 );
               } else {
-                console.log(`Adding new peer stream for ${data.peerId} with ${data.kind} track`);
+                console.log(`Adding new peer stream for ${data.peerId} with ${data.kind} track producerId ${data.producerId}`);
                 return [
                   ...prev,
                   {
                     peerId: data.peerId,
                     stream,
                     userProfile: data.userProfile,
-                    consumerId: consumer.id,
+                    producerId: data.producerId,
                   },
                 ];
               }

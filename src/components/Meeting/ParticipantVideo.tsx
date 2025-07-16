@@ -10,7 +10,7 @@ interface ParticipantVideoProps {
   onClick: () => void;
   username?: string;
   avatar?: string;
-  consumerId?: string;
+  producerId?: string;
   socket?: Socket | null;
 }
 
@@ -22,7 +22,7 @@ const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
   onClick,
   username,
   avatar,
-  consumerId,
+  producerId,
   socket
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -137,7 +137,7 @@ const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
         )}
       </div>
       {/* Set Consumer Preferred Layers Modal (remote only) */}
-      {!isLocal && consumerId && socket && (
+      {!isLocal && producerId && socket && (
         <>
           <button
             style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 2, fontSize: 10, padding: '2px 8px' }}
@@ -172,8 +172,8 @@ const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
                 >
                   ×
                 </button>
-                <h5 style={{ color: '#fff', margin: '0 0 8px 0', fontSize: 14 }}>Set Layers for {username || peerId}</h5>
-                <SetConsumerLayersForm consumerId={consumerId} socket={socket} />
+                <h5 style={{ color: '#fff', margin: '0 0 8px 0', fontSize: 14 }}>Set Layers for producerId {producerId}</h5>
+                <SetConsumerLayersForm producerId={producerId} socket={socket} />
               </div>
             </div>
           )}

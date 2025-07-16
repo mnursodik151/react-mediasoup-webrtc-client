@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import { Socket } from 'socket.io-client';
 
 interface SetConsumerLayersFormProps {
-  consumerId: string;
+  producerId: string;
   socket: Socket;
 }
 
-const SetConsumerLayersForm: React.FC<SetConsumerLayersFormProps> = ({ consumerId, socket }) => {
+const SetConsumerLayersForm: React.FC<SetConsumerLayersFormProps> = ({ producerId, socket }) => {
   const [spatialLayer, setSpatialLayer] = useState('');
   const [temporalLayer, setTemporalLayer] = useState('');
   const [status, setStatus] = useState<string | null>(null);
@@ -19,20 +19,20 @@ const SetConsumerLayersForm: React.FC<SetConsumerLayersFormProps> = ({ consumerI
     }
     setStatus('Sending...');
     socket.emit('setConsumerPreferedLayers', {
-      consumerId,
+      producerId,
       spatialLayer: Number(spatialLayer),
       temporalLayer: Number(temporalLayer),
     });
   };
 
   React.useEffect(() => {
-    const onSet = (data: { consumerId: string; spatialLayer: number; temporalLayer: number }) => {
-      if (data.consumerId === consumerId) {
+    const onSet = (data: { producerId: string; spatialLayer: number; temporalLayer: number }) => {
+      if (data.producerId === producerId) {
         setStatus(`Set: spatial=${data.spatialLayer}, temporal=${data.temporalLayer}`);
       }
     };
-    const onError = (data: { consumerId: string; error: string }) => {
-      if (data.consumerId === consumerId) {
+    const onError = (data: { producerId: string; error: string }) => {
+      if (data.producerId === producerId) {
         setStatus(`Error: ${data.error}`);
       }
     };
@@ -42,7 +42,7 @@ const SetConsumerLayersForm: React.FC<SetConsumerLayersFormProps> = ({ consumerI
       socket.off('consumerLayersSet', onSet);
       socket.off('consumerLayersError', onError);
     };
-  }, [socket, consumerId]);
+  }, [socket, producerId]);
 
   return (
     <form onSubmit={handleSubmit} style={{ marginTop: 8, background: '#222', padding: 8, borderRadius: 6 }}>
