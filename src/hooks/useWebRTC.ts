@@ -99,13 +99,13 @@ export const useWebRTC = (socket: Socket | null) => {
           iceParameters: options.iceParameters,
           iceCandidates: options.iceCandidates,
           dtlsParameters: options.dtlsParameters,
-          // iceServers: options.turnServers,
+          iceServers: options.turnServers,
           // Add these configurations to encourage TURN usage
           iceTransportPolicy: 'all' as RTCIceTransportPolicy, // Force using relay candidates only
-          // additionalIceParameters: {
-          //   iceLite: false, // Ensure full ICE implementation
-          //   iceControlling: true, // Try to take control of ICE negotiation
-          // }
+          additionalIceParameters: {
+            iceLite: false, // Ensure full ICE implementation
+            iceControlling: true, // Try to take control of ICE negotiation
+          }
         };
 
         console.log(`Creating ${mediaType} send transport with TURN servers:`, options.turnServers);
@@ -375,13 +375,13 @@ export const useWebRTC = (socket: Socket | null) => {
           iceParameters: options.iceParameters,
           iceCandidates: options.iceCandidates,
           dtlsParameters: options.dtlsParameters,
-          // iceServers: options.turnServers,
+          iceServers: options.turnServers,
           // Add these configurations to encourage TURN usage
           iceTransportPolicy: 'all' as RTCIceTransportPolicy,
-          // additionalIceParameters: {
-          //   iceLite: false,
-          //   iceControlling: true
-          // }
+          additionalIceParameters: {
+            iceLite: false,
+            iceControlling: true
+          }
         };
 
         console.log(`Creating receive transport for ${data.kind} with TURN servers:`, options.turnServers);
