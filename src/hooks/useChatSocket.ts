@@ -2,24 +2,24 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSocket } from './useSocket';
 
 // Define message type
-export interface ChatMessage {
-  senderId: string;
-  content: string;
-  timestamp: number;
-  room?: string;
+export interface ChatMessage { 
+  meetingId: string; 
+  content: string; 
+  userId: string; 
+  attachmentId?: string; 
 }
 
 export const useChatSocket = () => {
   // Use the base socket hook with chat namespace
-  const { 
-    socket, 
-    wsIP, 
-    userId, 
-    showConfigModal, 
-    setWsIP, 
-    setUserId, 
-    setShowConfigModal, 
-    handleConfigSubmit, 
+  const {
+    socket,
+    wsIP,
+    userId,
+    showConfigModal,
+    setWsIP,
+    setUserId,
+    setShowConfigModal,
+    handleConfigSubmit,
     disconnectSocket
   } = useSocket('/chat');
 
@@ -27,7 +27,7 @@ export const useChatSocket = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentRoom, setCurrentRoom] = useState<string>('general');
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
-  
+
   // Initialize chat event listeners
   useEffect(() => {
     if (!socket) return;
@@ -65,20 +65,20 @@ export const useChatSocket = () => {
     if (!socket || !content.trim()) return;
 
     const message: ChatMessage = {
-      senderId: userId,
       content,
-      timestamp: Date.now(),
-      room: currentRoom
+      meetingId: '8c8927ec-3413-4a6c-8518-115520f9ebbd',
+      userId: '69a5022d-415c-4627-aa42-4593cae1e06a',
+      attachmentId: '68b02400808cd63c135c0db8', // Placeholder for future attachment support
     };
-    
+
     console.log('Sending chat message:', message);
-    socket.emit('sendMessage', message);
+    socket.emit('sendChatMessage', message);
   }, [socket, userId, currentRoom]);
 
   // Function to join a chat room
   const joinRoom = useCallback((roomName: string) => {
     if (!socket) return;
-    
+
     console.log(`Attempting to join chat room: ${roomName}`);
     socket.emit('joinRoom', { roomName });
   }, [socket]);
@@ -89,10 +89,10 @@ export const useChatSocket = () => {
       console.error('Cannot join chat room: Socket not connected');
       return;
     }
-    
+
     console.log(`Emitting joinChatRoom event for meeting: ${meetingId}`);
     socket.emit('joinChatRoom', { meetingId });
-    
+
     // Listen for successful join response if needed
     socket.once('joinedChatRoom', (response: { meetingId: string, success: boolean }) => {
       if (response.success) {
@@ -117,7 +117,7 @@ export const useChatSocket = () => {
     setShowConfigModal,
     handleConfigSubmit,
     disconnectSocket,
-    
+
     // Chat specific properties and methods
     messages,
     currentRoom,

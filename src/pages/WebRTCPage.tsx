@@ -82,6 +82,9 @@ export default function MediaRoom() {
     peerId: string;
   } | null>(null);
 
+  // Toast for media control notifications
+  const [mediaControlToast, setMediaControlToast] = useState<string | null>(null);
+
   // --- Set Consumer Preferred Layers Form State ---
   const [layerForm, setLayerForm] = useState({
     producerId: '',
@@ -93,6 +96,15 @@ export default function MediaRoom() {
   // Listen for server responses
   useEffect(() => {
     if (!socket) return;
+    const onMediaControlInitiated = (data: { targetPeerId: string }) => {
+      // Show a temporary toast
+      const msg = `Media control initiated for ${data.targetPeerId}`;
+      console.log('mediaControlInitiated (page):', data);
+      setMediaControlToast(msg);
+      setTimeout(() => setMediaControlToast(null), 3500);
+    };
+
+    socket.on('mediaControlInitiated', onMediaControlInitiated);
     const onLayersSet = (data: { producerId: string; spatialLayer: number; temporalLayer: number }) => {
       setLayerFormStatus(
         `Layers set for consumer ${data.producerId}: spatial=${data.spatialLayer}, temporal=${data.temporalLayer}`
@@ -106,6 +118,7 @@ export default function MediaRoom() {
     return () => {
       socket.off('consumerLayersSet', onLayersSet);
       socket.off('consumerLayersError', onLayersError);
+      socket.off('mediaControlInitiated', onMediaControlInitiated);
     };
   }, [socket]);
 
@@ -442,19 +455,27 @@ export default function MediaRoom() {
             isActive={activeVideoId === 'local'}
             isLocal={true}
             onClick={() => setActiveVideoId('local')}
+            socket={socket}
+            myPeerId={peerId}
           />
 
-          {remotePeers.map(({ peerId, stream, userProfile, producerId: producerId }) => (
+          {remotePeers.map(({ peerId: remotePeerId, stream, userProfile, producerId: producerId }) => (
             <ParticipantVideo
-              key={peerId}
+              key={remotePeerId}
               stream={stream}
-              peerId={peerId}
-              isActive={activeVideoId === peerId}
-              onClick={() => setActiveVideoId(peerId)}
+              peerId={remotePeerId}
+              isActive={activeVideoId === remotePeerId}
+              onClick={() => setActiveVideoId(remotePeerId)}
               username={userProfile?.username}
               avatar={userProfile?.avatar}
               producerId={producerId}
               socket={socket}
+              myPeerId={peerId}
+              onMediaControlResponse={(data: any) => {
+                const msg = data && data.targetPeerId ? `Media control accepted for ${data.targetPeerId}` : `Media control response: ${JSON.stringify(data)}`;
+                setMediaControlToast(msg);
+                setTimeout(() => setMediaControlToast(null), 3500);
+              }}
             />
           ))}
         </div>
@@ -502,6 +523,12 @@ export default function MediaRoom() {
         >
           Debug Stats
         </button>
+        {/* Media control toast */}
+        {mediaControlToast && (
+          <div style={{ position: 'fixed', right: 12, bottom: 80, background: '#222', color: '#fff', padding: '8px 12px', borderRadius: 6, zIndex: 200 }}>
+            {mediaControlToast}
+          </div>
+        )}
       </div>
     );
   };

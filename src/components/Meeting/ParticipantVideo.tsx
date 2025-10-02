@@ -12,6 +12,8 @@ interface ParticipantVideoProps {
   avatar?: string;
   producerId?: string;
   socket?: Socket | null;
+  myPeerId?: string; // optional: current user's peer id (used as initiatorPeerId)
+  onMediaControlResponse?: (data: any) => void;
 }
 
 const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
@@ -23,14 +25,30 @@ const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
   username,
   avatar,
   producerId,
-  socket
+  socket,
+  myPeerId,
+  onMediaControlResponse
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [resolution, setResolution] = useState<{ width: number; height: number } | null>(null);
   const [showLayersModal, setShowLayersModal] = useState(false);
 
+  // Keep a stable handler reference for cleanup
   useEffect(() => {
-    const attachStream = async () => {
+    return () => {
+      // remove any one-time listeners that might remain
+      try {
+        if (socket) {
+          socket.off('mediaControlInitiated');
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+  }, [socket]);
+
+  useEffect(() => {
+  const attachStream = async () => {
       if (videoRef.current && stream) {
         try {
           if (videoRef.current.srcObject !== stream) {
@@ -50,6 +68,45 @@ const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
     };
     attachStream();
   }, [peerId, stream]);
+
+  // Handler when the participant tile is clicked
+  const handleSelect = () => {
+    // existing onClick behavior (e.g. set active video)
+    try {
+      onClick();
+    } catch (e) {
+      // ignore
+    }
+
+    // Emit initiateMediaControl to server
+    if (socket) {
+      const initiator = (typeof (socket as any).peerId === 'string' && (socket as any).peerId) ||
+                        (typeof (socket as any).id === 'string' && (socket as any).id) ||
+                        (typeof (socket as any).io === 'object' && (socket as any).io.opts && (socket as any).io.opts.query && (socket as any).io.opts.query.peerId) ||
+                        myPeerId ||
+                        null;
+
+      const payload = {
+        initiatorPeerId: initiator,
+        targetPeerId: peerId,
+      };
+
+      // Log what we're sending for debugging
+      console.log('Sending initiateMediaControl', payload);
+      socket.emit('initiateMediaControl', payload);
+
+      // Listen once for the server acknowledgement broadcast
+      socket.once('mediaControlInitiated', (data: any) => {
+        console.log('mediaControlInitiated received from server:', data);
+        if (onMediaControlResponse) onMediaControlResponse(data);
+      });
+    } else {
+      console.warn('Socket not available - cannot initiate media control');
+      if (onMediaControlResponse) {
+        onMediaControlResponse({ error: 'Socket not available - cannot initiate media control', targetPeerId: peerId });
+      }
+    }
+  };
 
   useEffect(() => {
     // Get the first video track and its settings
@@ -80,7 +137,7 @@ const ParticipantVideo: React.FC<ParticipantVideoProps> = ({
   return (
     <div
       className={`participant-tile ${isActive ? 'active' : ''}`}
-      onClick={onClick}
+      onClick={handleSelect}
       style={{ position: 'relative' }}
     >
       <video
