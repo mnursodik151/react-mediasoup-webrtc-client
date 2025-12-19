@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import './WebRTCPage.css';
 import './DoodlePage.css';
-import DoodleSpace from '../components/DoodleSpace';
+import DoodleSpace, { DrawEvent, ClearEvent } from '../components/DoodleSpace';
 import ConfigurationModal from '../components/Meeting/ConfigurationModal';
 import { useSocket } from '../hooks/useSocket';
 import { useWebRTCDataChannel } from '../hooks/useWebRTCDataChannel';
@@ -14,7 +14,6 @@ export default function DoodlePage() {
     showConfigModal,
     setWsIP,
     setUserId,
-    setShowConfigModal,
     handleConfigSubmit
   } = useSocket();
 
@@ -23,11 +22,12 @@ export default function DoodlePage() {
     joinRoom,
     leaveRoom,
     sendData,
-    receivedData
+    receivedData,
+    clearReceivedData
   } = useWebRTCDataChannel(socket);
 
   const [roomId] = useState('doodle-room');
-  const [doodleEvents, setDoodleEvents] = useState<any[]>([]);
+  const [doodleEvents, setDoodleEvents] = useState<Array<DrawEvent | ClearEvent>>([]);
   const mountedRef = useRef(false);
 
   // Auto-join room when socket is available
@@ -61,11 +61,21 @@ export default function DoodlePage() {
       console.log(`Received ${receivedData.length} doodle events at ${now}:`, receivedData);
       
       // Add timestamp to events if missing
-      const eventsWithTimestamps = receivedData.map(event => ({
-        ...event,
-        timestamp: event.timestamp || now,
-        source: 'remote'
-      }));
+      const eventsWithTimestamps: Array<DrawEvent | ClearEvent> = receivedData
+        .map(event => {
+          try {
+            const parsed = typeof event === 'string' ? JSON.parse(event) : event;
+            return {
+              ...parsed,
+              timestamp: parsed.timestamp || now,
+              source: 'remote'
+            } as DrawEvent | ClearEvent;
+          } catch (error) {
+            console.error('Failed to parse doodle event:', error);
+            return null;
+          }
+        })
+        .filter((event): event is DrawEvent | ClearEvent => event !== null);
       
       // Log time since last processed batch
       if (lastProcessedTimestampRef.current > 0) {
@@ -74,14 +84,15 @@ export default function DoodlePage() {
       }
       lastProcessedTimestampRef.current = now;
       
-      setDoodleEvents(prev => [...prev, ...eventsWithTimestamps]);
+  setDoodleEvents(prev => [...prev, ...eventsWithTimestamps]);
+  clearReceivedData();
     }
-  }, [receivedData]);
+  }, [receivedData, clearReceivedData]);
 
   // Handle doodle event broadcasting
-  const handleBroadcastDoodle = (event: any) => {
+  const handleBroadcastDoodle = (event: DrawEvent | ClearEvent) => {
     // Add timestamp to track event flow
-    const eventWithTimestamp = {
+    const eventWithTimestamp: DrawEvent | ClearEvent = {
       ...event,
       timestamp: Date.now(),
       source: 'local'

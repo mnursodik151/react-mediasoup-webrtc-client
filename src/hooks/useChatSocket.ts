@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSocket } from './useSocket';
 
 // Define message type
@@ -6,6 +6,8 @@ export interface ChatMessage {
   meetingId: string; 
   content: string; 
   userId: string; 
+  senderId?: string;
+  timestamp?: number;
   attachmentId?: string; 
 }
 
@@ -64,10 +66,14 @@ export const useChatSocket = () => {
   const sendMessage = useCallback((content: string) => {
     if (!socket || !content.trim()) return;
 
+    const resolvedUserId = userId || 'anonymous-user';
+
     const message: ChatMessage = {
       content,
       meetingId: '8c8927ec-3413-4a6c-8518-115520f9ebbd',
-      userId: '69a5022d-415c-4627-aa42-4593cae1e06a',
+      userId: resolvedUserId,
+      senderId: resolvedUserId,
+      timestamp: Date.now(),
       attachmentId: '68b02400808cd63c135c0db8', // Placeholder for future attachment support
     };
 

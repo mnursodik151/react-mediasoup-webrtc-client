@@ -19,6 +19,8 @@ export const useWebRTCDataChannel = (socket: Socket | null) => {
   const recvDataTransportRef = useRef<mediasoupClient.types.Transport | null>(null);
   const dataProducerRef = useRef<mediasoupClient.types.DataProducer | null>(null);
   const dataConsumersRef = useRef<Map<string, mediasoupClient.types.DataConsumer>>(new Map());
+  const roomIdRef = useRef<string | null>(null);
+  const peerIdRef = useRef<string | null>(null);
 
   // Clear received data
   const clearReceivedData = useCallback(() => {
@@ -190,16 +192,16 @@ export const useWebRTCDataChannel = (socket: Socket | null) => {
         });
 
         // Signal ready to receive data from peers
-        console.log(`Ready to receive data on send transport for peer: ${peerIdentifier} room: ${roomId}`);
+        console.log(`Ready to receive data on send transport for peer: ${peerIdentifier}`);
 
-        // Add extra debugging for room ID
-      console.log(`Sending readyToReceiveData with roomId: "${roomId}" (type: ${typeof roomId}) peerId: ${peerIdentifier}`);
-      if (roomId === null) {
-        console.warn('roomId is null! Using default roomId "doodle-room" instead');
-        socket.emit('readyToReceiveData', { roomId: 'doodle-room', peerId: peerIdentifier });
-      } else {
-        socket.emit('readyToReceiveData', { roomId: roomId, peerId: peerIdentifier });
-      }
+        const currentRoomId = roomIdRef.current;
+        console.log(`Sending readyToReceiveData with roomId: "${currentRoomId}" (type: ${typeof currentRoomId}) peerId: ${peerIdentifier}`);
+        if (!currentRoomId) {
+          console.warn('roomId is null! Using default roomId "doodle-room" instead');
+          socket.emit('readyToReceiveData', { roomId: 'doodle-room', peerId: peerIdentifier });
+        } else {
+          socket.emit('readyToReceiveData', { roomId: currentRoomId, peerId: peerIdentifier });
+        }
 
       } catch (error) {
         console.error('Error creating send data transport:', error);
@@ -212,7 +214,7 @@ export const useWebRTCDataChannel = (socket: Socket | null) => {
       peerId: peerIdentifier,
       sctpCapabilities: deviceRef.current.sctpCapabilities
     });
-  }, [socket, roomId]);
+  }, [socket]);
 
   // Create receive transport for data channel
   const createRecvDataTransport = useCallback(async (peerIdentifier: string) => {
@@ -267,8 +269,9 @@ export const useWebRTCDataChannel = (socket: Socket | null) => {
 
         // Now signal we're ready for data consumers
         // Add extra debugging for room ID
-        console.log(`Sending consumeAllExistingData with roomId: "${roomId}" (type: ${typeof roomId}) peerId: ${peerIdentifier}`);
-        if (roomId === null) {
+        const currentRoomId = roomIdRef.current;
+        console.log(`Sending consumeAllExistingData with roomId: "${currentRoomId}" (type: ${typeof currentRoomId}) peerId: ${peerIdentifier}`);
+        if (!currentRoomId) {
           console.warn('roomId is null! Using default roomId "doodle-room" instead');
           socket.emit('consumeAllExistingData', { 
             transportId: transport.id,
@@ -279,7 +282,7 @@ export const useWebRTCDataChannel = (socket: Socket | null) => {
         } else {
           socket.emit('consumeAllExistingData', { 
             transportId: transport.id,
-            roomId: roomId, 
+            roomId: currentRoomId, 
             peerId: peerIdentifier,
             sctpCapabilities: deviceRef.current.sctpCapabilities
           });
@@ -295,7 +298,7 @@ export const useWebRTCDataChannel = (socket: Socket | null) => {
       peerId: peerIdentifier,
       sctpCapabilities: deviceRef.current.sctpCapabilities
     });
-  }, [socket, roomId]);
+  }, [socket]);
 
   // Create a data consumer
   const createDataConsumer = useCallback(async (data: any) => {
@@ -394,16 +397,21 @@ export const useWebRTCDataChannel = (socket: Socket | null) => {
 
     try {
       console.log(`Requesting to consume specific data producer: ${producerId} from peer: ${producerPeerId}`);
-      
+      const consumingPeerId = peerIdRef.current;
+      if (!consumingPeerId) {
+        console.error('Cannot consume data producer - peerId is not set');
+        return;
+      }
+
       socket.emit('consumeData', {
         transportId: recvDataTransportRef.current.id,
         producerId,
         sctpCapabilities: deviceRef.current.sctpCapabilities,
-        peerId: peerId
+        peerId: consumingPeerId
       });
       
       // Set up a one-time handler for the specific consumer
-      const consumeReadyEventName = `readyToConsumeData_${peerId}_${producerId}`;
+      const consumeReadyEventName = `readyToConsumeData_${consumingPeerId}_${producerId}`;
       socket.once(consumeReadyEventName, async (data: any) => {
         await createDataConsumer(data);
       });
@@ -411,7 +419,68 @@ export const useWebRTCDataChannel = (socket: Socket | null) => {
     } catch (error) {
       console.error('Error consuming specific data producer:', error);
     }
-  }, [socket, peerId, createDataConsumer]);
+  }, [socket, createDataConsumer]);
+
+  const registerRoomEventHandlers = useCallback((peerIdentifier: string) => {
+    if (!socket) return;
+
+    socket.off('newDataConsumer');
+    socket.on('newDataConsumer', async (data: any) => {
+      console.log('Received new data consumer event:', data);
+      await consumeSpecificDataProducer(data.producerId, data.producerPeerId);
+    });
+
+    socket.off('newDataConsumers');
+    socket.on('newDataConsumers', async (data: { producers: any[] }) => {
+      console.log('Received multiple data consumers:', data);
+      const promises = data.producers.map(producer => {
+        return new Promise(async (resolve) => {
+          try {
+            await consumeSpecificDataProducer(producer.producerId, producer.producerPeerId);
+            resolve(true);
+          } catch (error) {
+            console.error('Error creating data consumer:', error);
+            resolve(false);
+          }
+        });
+      });
+
+      await Promise.all(promises);
+      console.log('Finished processing all new data consumers');
+    });
+
+    socket.off('dataProducerClosed');
+    socket.on('dataProducerClosed', (data: { peerId: string; dataProducerId: string }) => {
+      console.log('Data producer closed:', data);
+
+      dataConsumersRef.current.forEach((consumer, id) => {
+        if (consumer.dataProducerId === data.dataProducerId) {
+          console.log('Closing data consumer for closed producer:', id);
+          consumer.close();
+          dataConsumersRef.current.delete(id);
+        }
+      });
+    });
+
+    socket.off('peerDisconnected');
+    socket.on('peerDisconnected', (data: { peerId: string }) => {
+      console.log('Peer disconnected:', data.peerId);
+
+      dataConsumersRef.current.forEach((consumer, id) => {
+        const appData = consumer.appData as any;
+        if (appData.producerPeerId === data.peerId) {
+          console.log('Closing data consumer for disconnected peer:', id);
+          consumer.close();
+          dataConsumersRef.current.delete(id);
+        }
+      });
+    });
+
+    socket.off('peerReadyForData');
+    socket.on('peerReadyForData', (data: { peerId: string }) => {
+      console.log('Peer ready for data:', data.peerId, 'for listener peer:', peerIdentifier);
+    });
+  }, [socket, consumeSpecificDataProducer]);
 
   // Join a room
   const joinRoom = useCallback(async (roomToJoin: string, userId?: string) => {
@@ -426,8 +495,10 @@ export const useWebRTCDataChannel = (socket: Socket | null) => {
       // Use provided userId or generate a random peerId
       const generatedPeerId = userId || `peer-${Math.random().toString(36).substring(2, 15)}`;
       setPeerId(generatedPeerId);
+      peerIdRef.current = generatedPeerId;
       console.log('Using Peer ID:', generatedPeerId);
       setRoomId(roomToJoin);
+      roomIdRef.current = roomToJoin;
 
       // Clear any existing state
       if (dataProducerRef.current) {
@@ -447,12 +518,15 @@ export const useWebRTCDataChannel = (socket: Socket | null) => {
       
       dataConsumersRef.current.clear();
       clearReceivedData();
+      setIsConnected(false);
 
+      registerRoomEventHandlers(generatedPeerId);
       // Join the room
       socket.emit('joinRoom', { roomId: roomToJoin, peerId: generatedPeerId });
       console.log('Emitted joinRoom event with roomId and peerId:', { roomToJoin, generatedPeerId });
       
       // Handle socket events
+      socket.off('joinedRoom');
       socket.on('joinedRoom', async (data: any) => {
         console.log('Joined room, received router capabilities:', data);
         
@@ -480,67 +554,74 @@ export const useWebRTCDataChannel = (socket: Socket | null) => {
         });
       });
 
-      socket.on('newDataConsumer', async (data: any) => {
-        console.log('Received new data consumer event:', data);
-        await consumeSpecificDataProducer(data.producerId, data.producerPeerId);
-      });
-
-      socket.on('newDataConsumers', async (data: { producers: any[] }) => {
-        console.log('Received multiple data consumers:', data);
-        
-        const promises = data.producers.map(producer => {
-          return new Promise(async (resolve) => {
-            try {
-              await consumeSpecificDataProducer(producer.producerId, producer.producerPeerId);
-              resolve(true);
-            } catch (error) {
-              console.error('Error creating data consumer:', error);
-              resolve(false);
-            }
-          });
-        });
-
-        await Promise.all(promises);
-        console.log('Finished processing all new data consumers');
-      });
-
-      socket.on('dataProducerClosed', (data: { peerId: string; dataProducerId: string }) => {
-        console.log('Data producer closed:', data);
-        
-        // Find and close the corresponding data consumer
-        dataConsumersRef.current.forEach((consumer, id) => {
-          if (consumer.dataProducerId === data.dataProducerId) {
-            console.log('Closing data consumer for closed producer:', id);
-            consumer.close();
-            dataConsumersRef.current.delete(id);
-          }
-        });
-      });
-
-      socket.on('peerDisconnected', (data: { peerId: string }) => {
-        console.log('Peer disconnected:', data.peerId);
-        
-        // Close all data consumers associated with this peer
-        dataConsumersRef.current.forEach((consumer, id) => {
-          const appData = consumer.appData as any;
-          if (appData.producerPeerId === data.peerId) {
-            console.log('Closing data consumer for disconnected peer:', id);
-            consumer.close();
-            dataConsumersRef.current.delete(id);
-          }
-        });
-      });
-      
-      // Handle when other peers are ready to receive data
-      socket.on('peerReadyForData', (data: { peerId: string }) => {
-        console.log('Peer ready for data:', data.peerId);
-        // If needed, you can implement additional logic here when other peers are ready
-      });
-
     } catch (error) {
       console.error('Error joining room:', error);
     }
-  }, [socket, clearReceivedData, createSendDataTransport, createRecvDataTransport, createDataConsumer]);
+  }, [socket, clearReceivedData, createSendDataTransport, createRecvDataTransport, registerRoomEventHandlers]);
+
+  type InitializeDataChannelParams = {
+    roomId: string;
+    peerId: string;
+    device: mediasoupClient.Device;
+    cleanupExisting?: boolean;
+  };
+
+  const initializeDataChannel = useCallback(async ({
+    roomId: targetRoomId,
+    peerId: targetPeerId,
+    device,
+    cleanupExisting = true,
+  }: InitializeDataChannelParams) => {
+    if (!socket) {
+      console.error('Socket connection not established');
+      return;
+    }
+
+    if (!device) {
+      console.error('Cannot initialize data channel without a mediasoup device');
+      return;
+    }
+
+    console.log('Initializing data channel with existing mediasoup session', {
+      roomId: targetRoomId,
+      peerId: targetPeerId,
+      hasSctpCapabilities: !!device.sctpCapabilities,
+    });
+
+    if (cleanupExisting) {
+      if (dataProducerRef.current) {
+        dataProducerRef.current.close();
+        dataProducerRef.current = null;
+      }
+
+      if (sendDataTransportRef.current) {
+        sendDataTransportRef.current.close();
+        sendDataTransportRef.current = null;
+      }
+
+      if (recvDataTransportRef.current) {
+        recvDataTransportRef.current.close();
+        recvDataTransportRef.current = null;
+      }
+
+      dataConsumersRef.current.forEach((consumer) => consumer.close());
+      dataConsumersRef.current.clear();
+    }
+
+    clearReceivedData();
+    setIsConnected(false);
+
+    setRoomId(targetRoomId);
+    roomIdRef.current = targetRoomId;
+    setPeerId(targetPeerId);
+    peerIdRef.current = targetPeerId;
+
+    deviceRef.current = device;
+
+    registerRoomEventHandlers(targetPeerId);
+    createSendDataTransport(targetPeerId);
+    createRecvDataTransport(targetPeerId);
+  }, [socket, clearReceivedData, registerRoomEventHandlers, createSendDataTransport, createRecvDataTransport]);
 
   // Leave a room
   const leaveRoom = useCallback(() => {
@@ -586,6 +667,10 @@ export const useWebRTCDataChannel = (socket: Socket | null) => {
       recvDataTransportRef.current = null;
     }
     
+    deviceRef.current = null;
+    roomIdRef.current = null;
+    peerIdRef.current = null;
+
     // Remove socket listeners
     if (socket) {
       socket.off('joinedRoom');
@@ -718,6 +803,8 @@ export const useWebRTCDataChannel = (socket: Socket | null) => {
     leaveRoom,
     sendData,
     clearReceivedData,
-    consumeSpecificDataProducer
+    consumeSpecificDataProducer,
+    initializeDataChannel,
+    cleanupDataChannel: cleanupResources
   };
 };

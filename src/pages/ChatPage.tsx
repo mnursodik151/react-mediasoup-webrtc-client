@@ -126,18 +126,24 @@ const ChatPage: React.FC = () => {
                 No messages yet. Say hello!
               </div>
             ) : (
-              messages.map((msg, index) => (
-                <div 
-                  key={index}
-                  className={`message ${msg.senderId === userId ? 'self' : ''}`}
-                >
-                  <div className="message-header">
-                    <span className="sender">{msg.senderId === userId ? 'You' : msg.senderId}</span>
-                    <span className="timestamp">{new Date(msg.timestamp).toLocaleTimeString()}</span>
+              messages.map((msg, index) => {
+                const senderLabel = msg.senderId ?? msg.userId;
+                const isSelf = senderLabel === userId;
+                const timestampLabel = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : '';
+
+                return (
+                  <div 
+                    key={index}
+                    className={`message ${isSelf ? 'self' : ''}`}
+                  >
+                    <div className="message-header">
+                      <span className="sender">{isSelf ? 'You' : senderLabel}</span>
+                      <span className="timestamp">{timestampLabel}</span>
+                    </div>
+                    <div className="message-content">{msg.content}</div>
                   </div>
-                  <div className="message-content">{msg.content}</div>
-                </div>
-              ))
+                );
+              })
             )}
             <div ref={messagesEndRef} />
           </div>

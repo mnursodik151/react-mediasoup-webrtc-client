@@ -49,7 +49,6 @@ export const useWebRTC = (socket: Socket | null) => {
   const sendAudioTransportRef = useRef<mediasoupClient.types.Transport | null>(null);
   const recvTransportRef = useRef<mediasoupClient.types.Transport | null>(null);
   const peerStreams = useRef<Map<string, MediaStream>>(new Map());
-  const candidateCounter = useRef<Record<string, number>>({}).current;
   // Track if consumePeersInRoom has already been emitted
   const consumePeersEmittedRef = useRef<boolean>(false);
 
@@ -59,6 +58,7 @@ export const useWebRTC = (socket: Socket | null) => {
 
   // Track mapping to associate track IDs with peer IDs
   const trackToPeerMap = useRef<Map<string, string>>(new Map());
+  const [mediasoupDevice, setMediasoupDevice] = useState<mediasoupClient.Device | null>(null);
 
   // Create a send transport for a specific media type (audio or video)
   const createSendTransport = useCallback(async (
@@ -99,13 +99,13 @@ export const useWebRTC = (socket: Socket | null) => {
           iceParameters: options.iceParameters,
           iceCandidates: options.iceCandidates,
           dtlsParameters: options.dtlsParameters,
-          iceServers: options.turnServers,
-          // Add these configurations to encourage TURN usage
-          iceTransportPolicy: 'all' as RTCIceTransportPolicy, // Force using relay candidates only
-          additionalIceParameters: {
-            iceLite: false, // Ensure full ICE implementation
-            iceControlling: true, // Try to take control of ICE negotiation
-          }
+          // iceServers: options.turnServers,
+          // // Add these configurations to encourage TURN usage
+          // iceTransportPolicy: 'all' as RTCIceTransportPolicy, // Force using relay candidates only
+          // additionalIceParameters: {
+          //   iceLite: false, // Ensure full ICE implementation
+          //   iceControlling: true, // Try to take control of ICE negotiation
+          // }
         };
 
         console.log(`Creating ${mediaType} send transport with TURN servers:`, options.turnServers);
@@ -307,7 +307,7 @@ export const useWebRTC = (socket: Socket | null) => {
   const checkAndRemovePeerIfNeeded = useCallback((peerId: string) => {
     // Check if any tracks are still associated with this peer
     let peerHasTracks = false;
-    trackToPeerMap.current.forEach((pId, trackId) => {
+  trackToPeerMap.current.forEach((pId) => {
       if (pId === peerId) {
         peerHasTracks = true;
       }
@@ -487,7 +487,7 @@ export const useWebRTC = (socket: Socket | null) => {
               rtpParameters: rtpCapabilities,
             });
             console.log(`Consumer created for ${data.kind} from peer ${data.peerId}:`, consumer);
-
+            
             // // FIX: Request highest layers and start the media flow
             // if (consumer.kind === 'video') {
             //   try {
@@ -660,6 +660,7 @@ export const useWebRTC = (socket: Socket | null) => {
         const device = new mediasoupClient.Device();
         await device.load({ routerRtpCapabilities: rtpCapabilities }).then(async () => {
           deviceRef.current = device;
+          setMediasoupDevice(device);
           console.log('Mediasoup device loaded.', device);
 
           // Create separate transports for audio and video
@@ -753,6 +754,9 @@ export const useWebRTC = (socket: Socket | null) => {
       recvTransportRef.current = null;
       console.log('Closed receive transport');
     }
+
+    deviceRef.current = null;
+    setMediasoupDevice(null);
 
     // Clean up all peer streams
     peerStreams.current.forEach((stream, peerId) => {
@@ -877,51 +881,6 @@ export const useWebRTC = (socket: Socket | null) => {
     return monitorDataFlow(pc, description);
   };
 
-  // Helper to get the selected candidate pair (works in Chrome)
-  const getSelectedCandidatePair = async (pc: RTCPeerConnection) => {
-    if (!pc.getStats) return null;
-
-    try {
-      const stats = await pc.getStats();
-      let selectedPair: RTCIceCandidatePairStats | null = null;
-
-      stats.forEach(report => {
-        if (report.type === 'candidate-pair' && report.selected) {
-          selectedPair = report as RTCIceCandidatePairStats;
-        }
-      });
-
-      if (selectedPair) {
-        // Create a properly typed non-null reference
-        const nonNullPair = selectedPair as RTCIceCandidatePairStats & {
-          localCandidateId: string;
-          remoteCandidateId: string;
-        };
-        let localCandidate = null;
-        let remoteCandidate = null;
-
-        stats.forEach(report => {
-          if (report.id === nonNullPair.localCandidateId) {
-            localCandidate = report;
-          }
-          if (report.id === nonNullPair.remoteCandidateId) {
-            remoteCandidate = report;
-          }
-        });
-
-        return {
-          local: localCandidate,
-          remote: remoteCandidate,
-          pair: selectedPair
-        };
-      }
-      return null;
-    } catch (e) {
-      console.error('[ICE] Error getting stats:', e);
-      return null;
-    }
-  };
-
   // Function to log TURN servers being used
   const logIceServers = (servers: RTCIceServer[]) => {
     console.log('[ICE] Configured ICE servers:');
@@ -937,86 +896,6 @@ export const useWebRTC = (socket: Socket | null) => {
         credential: server.credential ? '✓' : '✗'
       });
     });
-  };
-
-  // Add this code to test your TURN server directly
-  // filepath: d:\Projects\io3-vsion-backends\sfu-web-client\src\hooks\useWebRTC.ts
-
-  // Add this function to your hook
-  const testTurnServer = useCallback((turnServer: RTCIceServer) => {
-    console.log('[ICE] Testing TURN server:', turnServer);
-
-    const pc1 = new RTCPeerConnection({ iceServers: [turnServer] });
-    const pc2 = new RTCPeerConnection({ iceServers: [turnServer] });
-
-    // Monitor both connections
-    monitorPeerConnection(pc1, 'TEST PC1');
-    monitorPeerConnection(pc2, 'TEST PC2');
-
-    pc1.onicecandidate = e => e.candidate && pc2.addIceCandidate(e.candidate);
-    pc2.onicecandidate = e => e.candidate && pc1.addIceCandidate(e.candidate);
-
-    // Create a data channel to trigger ICE connection
-    const dc = pc1.createDataChannel('test');
-    dc.onopen = () => console.log('[ICE] TEST CONNECTION SUCCEEDED - TURN server works!');
-
-    // Create offer/answer to establish connection
-    pc1.createOffer()
-      .then(offer => pc1.setLocalDescription(offer))
-      .then(() => pc2.setRemoteDescription(pc1.localDescription!))
-      .then(() => pc2.createAnswer())
-      .then(answer => pc2.setLocalDescription(answer))
-      .then(() => pc1.setRemoteDescription(pc2.localDescription!))
-      .catch(err => console.error('[ICE] Test failed:', err));
-
-    // Cleanup after 15 seconds
-    setTimeout(() => {
-      pc1.close();
-      pc2.close();
-    }, 15000);
-  }, []);
-
-  // Add this function to test TURN servers when needed
-  const setupTurnServerTest = useCallback(() => {
-    if (!socket) return;
-
-    socket.once('transportCreated', async (options: any) => {
-      if (options.turnServers && options.turnServers.length) {
-        // Test each TURN server independently
-        options.turnServers.forEach(testTurnServer);
-      }
-    });
-  }, [socket, testTurnServer]);
-
-  // You can call setupTurnServerTest() within joinRoom if you want to test TURN servers
-
-  // Add this function to test basic TURN server connectivity
-  const checkTurnServerAccess = async (turnServer: RTCIceServer): Promise<boolean> => {
-    try {
-      // Simple fetch test to see if server is reachable
-      // Extract server domain from URLs
-      const urls = Array.isArray(turnServer.urls) ? turnServer.urls[0] : turnServer.urls;
-      const serverUrl = urls.replace(/^(turn|stun)s?:\/\//, 'https://');
-      const domainOnly = serverUrl.split(':')[0];
-
-      console.log(`[ICE] Testing basic connectivity to TURN server domain: ${domainOnly}`);
-
-      // Just perform a HEAD request to see if server is online
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-
-      const response = await fetch(`https://${domainOnly}/`, {
-        method: 'HEAD',
-        mode: 'no-cors',
-        signal: controller.signal
-      }).catch(() => null);
-
-      clearTimeout(timeoutId);
-      return !!response;
-    } catch (err) {
-      console.warn('[ICE] TURN server domain connection test failed:', err);
-      return false;
-    }
   };
 
   // Add this function to monitor data flow
@@ -1112,30 +991,6 @@ export const useWebRTC = (socket: Socket | null) => {
     return interval;
   };
 
-  const monitorTrackStatus = (pc: RTCPeerConnection, description: string) => {
-    pc.getSenders().forEach(sender => {
-      if (sender.track) {
-        console.log(`[TRACK] ${description} Sending track: ${sender.track.kind}, enabled: ${sender.track.enabled}, muted: ${sender.track.muted}`);
-
-        // Monitor track state changes
-        sender.track.onended = () => console.log(`[TRACK] ${description} Sending ${sender.track!.kind} track ended`);
-        sender.track.onmute = () => console.log(`[TRACK] ${description} Sending ${sender.track!.kind} track muted`);
-        sender.track.onunmute = () => console.log(`[TRACK] ${description} Sending ${sender.track!.kind} track unmuted`);
-      }
-    });
-
-    pc.getReceivers().forEach(receiver => {
-      if (receiver.track) {
-        console.log(`[TRACK] ${description} Receiving track: ${receiver.track.kind}, enabled: ${receiver.track.enabled}, muted: ${receiver.track.muted}`);
-
-        // Monitor track state changes
-        receiver.track.onended = () => console.log(`[TRACK] ${description} Receiving ${receiver.track!.kind} track ended`);
-        receiver.track.onmute = () => console.log(`[TRACK] ${description} Receiving ${receiver.track!.kind} track muted`);
-        receiver.track.onunmute = () => console.log(`[TRACK] ${description} Receiving ${receiver.track!.kind} track unmuted`);
-      }
-    });
-  };
-
   // Add this function to get formatted debug info
   const getDebugInfo = useCallback(() => {
     const info: Record<string, any> = {};
@@ -1205,5 +1060,6 @@ export const useWebRTC = (socket: Socket | null) => {
     getDebugInfo, // Add the new function to the returned object
     // New exports
     trackToPeerMap: trackToPeerMap.current,
+    mediasoupDevice,
   };
 };

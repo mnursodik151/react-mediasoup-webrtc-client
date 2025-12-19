@@ -1,30 +1,43 @@
 import React, { useRef, useEffect, useState } from 'react';
 
 export interface DoodleSpaceProps {
-  broadcastDoodleEvent: (event: any) => void;
-  doodleEvents: any[];
+  broadcastDoodleEvent: (event: DrawEvent | ClearEvent) => void;
+  doodleEvents: Array<DrawEvent | ClearEvent>;
+  width?: number;
+  height?: number;
+  className?: string;
 }
 
-interface DrawEvent {
+export interface DrawEvent {
   type: 'draw';
   from: { x: number; y: number };
   to: { x: number; y: number };
   color: string;
   width: number;
+  timestamp?: number;
+  source?: 'local' | 'remote';
 }
 
-interface ClearEvent {
+export interface ClearEvent {
   type: 'clear';
+  timestamp?: number;
+  source?: 'local' | 'remote';
 }
 
-type DoodleEvent = DrawEvent | ClearEvent;
-
-const DoodleSpace: React.FC<DoodleSpaceProps> = ({ broadcastDoodleEvent, doodleEvents }) => {
+const DoodleSpace: React.FC<DoodleSpaceProps> = ({
+  broadcastDoodleEvent,
+  doodleEvents,
+  width = 600,
+  height = 400,
+  className,
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
   const lastPoint = useRef<{ x: number; y: number } | null>(null);
   const [currentColor, setCurrentColor] = useState('#000');
   const [lineWidth, setLineWidth] = useState(2);
+  const canvasWidth = width;
+  const canvasHeight = height;
   
   const colors = ['#000000', '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF'];
 
@@ -59,12 +72,17 @@ const DoodleSpace: React.FC<DoodleSpaceProps> = ({ broadcastDoodleEvent, doodleE
     // Find any new events we haven't processed yet
     const newEvents = doodleEvents.filter(event => {
       // Create a unique ID for each event based on its properties
-      const eventId = JSON.stringify({
-        type: event.type,
-        from: event.from,
-        to: event.to,
-        timestamp: event.timestamp || Date.now()
-      });
+      const eventId = event.type === 'draw'
+        ? JSON.stringify({
+            type: event.type,
+            from: event.from,
+            to: event.to,
+            timestamp: event.timestamp || Date.now()
+          })
+        : JSON.stringify({
+            type: event.type,
+            timestamp: event.timestamp || Date.now()
+          });
       
       if (processedEventsRef.current.has(eventId)) {
         return false;
@@ -130,13 +148,14 @@ const DoodleSpace: React.FC<DoodleSpaceProps> = ({ broadcastDoodleEvent, doodleE
     }
     
     // Create a draw event with a unique timestamp
-    const drawEvent = {
+    const drawEvent: DrawEvent = {
       type: 'draw',
       from: lastPoint.current,
       to: newPoint,
       color: currentColor,
       width: lineWidth,
       timestamp: Date.now(),
+      source: 'local'
     };
     
     // Log the event before broadcasting
@@ -164,9 +183,13 @@ const DoodleSpace: React.FC<DoodleSpaceProps> = ({ broadcastDoodleEvent, doodleE
     }
     
     // Broadcast clear event
-    broadcastDoodleEvent({
-      type: 'clear'
-    });
+    const clearEvent: ClearEvent = {
+      type: 'clear',
+      timestamp: Date.now(),
+      source: 'local'
+    };
+
+    broadcastDoodleEvent(clearEvent);
   };
   
   const handleColorChange = (color: string) => {
@@ -178,7 +201,10 @@ const DoodleSpace: React.FC<DoodleSpaceProps> = ({ broadcastDoodleEvent, doodleE
   };
 
   return (
-    <div style={{ border: '1px solid #ccc', padding: 8, background: '#fff' }}>
+    <div
+      className={className}
+      style={{ border: '1px solid #ccc', padding: 8, background: '#fff', maxWidth: canvasWidth }}
+    >
       <h3>Collaborative Doodle Space</h3>
       
       <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -220,9 +246,9 @@ const DoodleSpace: React.FC<DoodleSpaceProps> = ({ broadcastDoodleEvent, doodleE
       
       <canvas
         ref={canvasRef}
-        width={600}
-        height={400}
-        style={{ border: '1px solid #333', touchAction: 'none', backgroundColor: '#fff' }}
+        width={canvasWidth}
+        height={canvasHeight}
+        style={{ border: '1px solid #333', touchAction: 'none', backgroundColor: '#fff', width: '100%' }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

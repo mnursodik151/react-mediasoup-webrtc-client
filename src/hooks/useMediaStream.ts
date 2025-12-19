@@ -5,13 +5,12 @@ export const useMediaStream = () => {
   const [isVideoOff, setIsVideoOff] = useState(false);
   const localStreamRef = useRef<MediaStream | null>(null);
   
-  // Always use low resolution for bandwidth optimization
+  // Track the currently applied resolution for the local stream
   const [currentResolution, setCurrentResolution] = useState<'low' | 'medium' | 'high'>('low');
 
   const getMediaStream = async (resolution: 'low' | 'medium' | 'high' = 'medium'): Promise<MediaStream> => {
     try {
-      // Always use low resolution regardless of input parameter (for bandwidth optimization)
-      const actualResolution = 'medium';
+      const actualResolution = resolution;
       setCurrentResolution(actualResolution);
       
       // Define resolution presets
@@ -33,7 +32,7 @@ export const useMediaStream = () => {
         }
       };
       
-      console.log(`Requesting media with low resolution for bandwidth optimization:`, constraints);
+  console.log(`Requesting media stream at ${actualResolution} resolution:`, constraints);
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
       console.log('Media stream obtained:', stream, 'with actual resolution:', 
