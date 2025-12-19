@@ -11,11 +11,13 @@ import ControlBar from '../components/Meeting/ControlBar';
 import ConnectionDebugger from '../components/Meeting/ConnectionDebugger';
 // Add import for the StatsMonitor
 import StatsMonitor from '../components/Meeting/StatsMonitor';
+import DoodleSpace, { DrawEvent, ClearEvent } from '../components/DoodleSpace';
 
 // Import hooks
 import { useSocket } from '../hooks/useSocket';
 import { useWebRTC } from '../hooks/useWebRTC';
 import { useMediaStream } from '../hooks/useMediaStream';
+import { useWebRTCDataChannel } from '../hooks/useWebRTCDataChannel';
 
 export default function MediaRoom() {
   // Use custom hooks
@@ -59,17 +61,29 @@ export default function MediaRoom() {
     setActiveVideoId,
     joinRoom,
     leaveRoom,
-    cleanupRoomResources,
     preferredCodec,
     setPreferredCodec,
-    connectionStats // Add this line
+    connectionStats, // Add this line
+    mediasoupDevice
   } = useWebRTC(socket);
+
+  const {
+    isConnected: isDoodleConnected,
+    initializeDataChannel,
+    cleanupDataChannel,
+    sendData: sendDoodleData,
+    receivedData: receivedDoodleData,
+    clearReceivedData: clearDoodleData
+  } = useWebRTCDataChannel(socket);
 
   // Local state for UI
   const [showInviteModal, setShowInviteModal] = useState<boolean>(false);
   const [inviteUserIds, setInviteUserIds] = useState<string>('');
   const [invitationStatus, setInvitationStatus] = useState<string>('');
   const localVideoRef = useRef<HTMLVideoElement>(null);
+
+  const [doodleEvents, setDoodleEvents] = useState<Array<DrawEvent | ClearEvent>>([]);
+  const dataChannelInitializedRef = useRef(false);
 
   // Add a state for invitation acceptance process
   const [acceptingInvitation, setAcceptingInvitation] = useState<boolean>(false);
@@ -85,14 +99,6 @@ export default function MediaRoom() {
   // Toast for media control notifications
   const [mediaControlToast, setMediaControlToast] = useState<string | null>(null);
 
-  // --- Set Consumer Preferred Layers Form State ---
-  const [layerForm, setLayerForm] = useState({
-    producerId: '',
-    spatialLayer: '',
-    temporalLayer: '',
-  });
-  const [layerFormStatus, setLayerFormStatus] = useState<string | null>(null);
-
   // Listen for server responses
   useEffect(() => {
     if (!socket) return;
@@ -106,12 +112,10 @@ export default function MediaRoom() {
 
     socket.on('mediaControlInitiated', onMediaControlInitiated);
     const onLayersSet = (data: { producerId: string; spatialLayer: number; temporalLayer: number }) => {
-      setLayerFormStatus(
-        `Layers set for consumer ${data.producerId}: spatial=${data.spatialLayer}, temporal=${data.temporalLayer}`
-      );
+      console.log('consumerLayersSet', data);
     };
     const onLayersError = (data: { producerId: string; error: string }) => {
-      setLayerFormStatus(`Error for consumer ${data.producerId}: ${data.error}`);
+      console.warn('consumerLayersError', data);
     };
     socket.on('consumerLayersSet', onLayersSet);
     socket.on('consumerLayersError', onLayersError);
@@ -121,25 +125,6 @@ export default function MediaRoom() {
       socket.off('mediaControlInitiated', onMediaControlInitiated);
     };
   }, [socket]);
-
-  // Form submit handler
-  const handleLayerFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!layerForm.producerId || layerForm.spatialLayer === '' || layerForm.temporalLayer === '') {
-      setLayerFormStatus('All fields are required.');
-      return;
-    }
-    if (!socket) {
-      setLayerFormStatus('Socket not connected.');
-      return;
-    }
-    setLayerFormStatus('Sending...');
-    socket.emit('setConsumerPreferedLayers', {
-      producerId: layerForm.producerId,
-      spatialLayer: Number(layerForm.spatialLayer),
-      temporalLayer: Number(layerForm.temporalLayer),
-    });
-  };
 
   // Add this function to check browser compatibility
   const checkMediaDeviceSupport = () => {
@@ -156,6 +141,72 @@ export default function MediaRoom() {
   useEffect(() => {
     console.log(`Resolution state changed to: ${currentResolution}`);
   }, [currentResolution]);
+
+  useEffect(() => {
+    if (!socket || !isJoined || !peerId || !roomId || !mediasoupDevice) {
+      return;
+    }
+
+    if (dataChannelInitializedRef.current) {
+      return;
+    }
+
+    initializeDataChannel({ roomId, peerId, device: mediasoupDevice });
+    dataChannelInitializedRef.current = true;
+  }, [socket, isJoined, peerId, roomId, mediasoupDevice, initializeDataChannel]);
+
+  useEffect(() => {
+    if (!isJoined) {
+      if (dataChannelInitializedRef.current) {
+        dataChannelInitializedRef.current = false;
+        cleanupDataChannel();
+      }
+
+      if (doodleEvents.length) {
+        setDoodleEvents([]);
+      }
+    }
+  }, [isJoined, cleanupDataChannel, doodleEvents.length]);
+
+  useEffect(() => {
+    if (!receivedDoodleData || receivedDoodleData.length === 0) {
+      return;
+    }
+
+    const normalizedEvents: Array<DrawEvent | ClearEvent> = receivedDoodleData
+      .map((rawEvent) => {
+        try {
+          const parsed = typeof rawEvent === 'string' ? JSON.parse(rawEvent) : rawEvent;
+          return {
+            ...parsed,
+            timestamp: parsed?.timestamp ?? Date.now(),
+            source: parsed?.source ?? 'remote',
+          } as DrawEvent | ClearEvent;
+        } catch (error) {
+          console.error('Failed to parse doodle event payload:', error);
+          return null;
+        }
+      })
+      .filter((event): event is DrawEvent | ClearEvent => event !== null);
+
+    setDoodleEvents((prev) => [...prev, ...normalizedEvents]);
+    clearDoodleData();
+  }, [receivedDoodleData, clearDoodleData]);
+
+  const handleBroadcastDoodle = (event: DrawEvent | ClearEvent) => {
+    const enrichedEvent: DrawEvent | ClearEvent = {
+      ...event,
+      timestamp: event.timestamp ?? Date.now(),
+      source: 'local',
+    };
+
+    setDoodleEvents((prev) => [...prev, enrichedEvent]);
+
+    const sent = sendDoodleData(enrichedEvent);
+    if (!sent) {
+      console.warn('Failed to send doodle event - data channel may be unavailable');
+    }
+  };
 
   // Handle joining a room
   const handleJoinRoom = async () => {
@@ -241,11 +292,17 @@ export default function MediaRoom() {
   const handleDisconnect = () => {
     leaveRoom();
     cleanupMedia();
+    cleanupDataChannel();
+    dataChannelInitializedRef.current = false;
+    setDoodleEvents([]);
   };
 
   // Handle manual socket disconnection from config modal
   const handleManualDisconnect = () => {
     disconnectSocket();
+    cleanupDataChannel();
+    dataChannelInitializedRef.current = false;
+    setDoodleEvents([]);
   };
 
   // Handle invite submission
@@ -318,6 +375,8 @@ export default function MediaRoom() {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       leaveRoom();
       cleanupMedia();
+      cleanupDataChannel();
+      dataChannelInitializedRef.current = false;
       event.preventDefault();
       event.returnValue = '';
       return '';
@@ -329,8 +388,10 @@ export default function MediaRoom() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       leaveRoom();
       cleanupMedia();
+      cleanupDataChannel();
+      dataChannelInitializedRef.current = false;
     };
-  }, []);
+  }, [leaveRoom, cleanupMedia, cleanupDataChannel]);
 
   // Log when invitation state changes
   useEffect(() => {
@@ -445,7 +506,28 @@ export default function MediaRoom() {
     return (
       <div className="meeting-room">
         <div className="main-area">
-          <MainVideo activeStream={activeStream} activeVideoId={activeVideoId} />
+          <div className="main-area-content">
+            <div className="main-video-pane">
+              <MainVideo activeStream={activeStream} activeVideoId={activeVideoId} />
+            </div>
+            <div className="doodle-pane">
+              <div className={`doodle-status-badge ${isDoodleConnected ? 'connected' : 'disconnected'}`}>
+                {isDoodleConnected ? 'Shared doodle connected' : 'Shared doodle offline'}
+              </div>
+              {!isDoodleConnected && (
+                <div className="doodle-help-text">
+                  Drawings sync automatically once the data channel reconnects.
+                </div>
+              )}
+              <DoodleSpace
+                broadcastDoodleEvent={handleBroadcastDoodle}
+                doodleEvents={doodleEvents}
+                width={420}
+                height={320}
+                className="doodle-space-card"
+              />
+            </div>
+          </div>
         </div>
 
         <div className="participants-strip">

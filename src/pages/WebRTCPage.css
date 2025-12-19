@@ -85,9 +85,75 @@ body {
   flex: 1;
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: stretch;
   padding: 1rem;
   overflow: hidden;
+}
+
+.main-area-content {
+  display: flex;
+  gap: 16px;
+  width: 100%;
+  max-width: 1400px;
+  height: 100%;
+}
+
+.main-video-pane {
+  flex: 2;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.doodle-pane {
+  flex: 1;
+  max-width: 420px;
+  background: rgba(41, 42, 45, 0.9);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.doodle-space-card {
+  width: 100%;
+}
+
+.doodle-status-badge {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.doodle-status-badge.connected {
+  background: rgba(76, 175, 80, 0.15);
+  color: #5dd075;
+}
+
+.doodle-status-badge.disconnected {
+  background: rgba(234, 67, 53, 0.15);
+  color: #f28b82;
+}
+
+.doodle-help-text {
+  font-size: 0.85rem;
+  color: #e8eaed;
+  opacity: 0.75;
+}
+
+@media (max-width: 1200px) {
+  .main-area-content {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .doodle-pane {
+    max-width: none;
+  }
 }
 
 .main-video-container {
